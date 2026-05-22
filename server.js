@@ -2,31 +2,48 @@ const express = require('express');
 const app = express();
 const http = require('http').createServer(app);
 const io = require('socket.io')(http, {
-    cors: { origin: "*" }
+    cors: { origin: "*", methods: ["GET", "POST"] }
 });
-const fs = require('fs');
 const path = require('path');
+
+// DRIVER DO MONGODB
+const { MongoClient, ServerApiVersion } = require('mongodb');
 
 app.use(express.json({ limit: '50mb' }));
 
-// ========== CONFIGURAÇÕES ==========
+// ========== CONFIGURAÇÕES DO BANCO DE DADOS ==========
+const uri = "mongodb+srv://server:adm27019213btu@btuapplication.wii3blb.mongodb.net/?appName=btuapplication";
+
+const client = new MongoClient(uri, {
+  serverApi: {
+    version: ServerApiVersion.v1,
+    strict: true,
+    deprecationErrors: true,
+  }
+});
+
+let db, usuariosColl, contatosColl;
+
+async function conectarBanco() {
+    try {
+        await client.connect();
+        db = client.db("meu_aplicativo_chat"); 
+        usuariosColl = db.collection("usuarios"); 
+        contatosColl = db.collection("contatos"); 
+        console.log("🟢 Conectado com sucesso ao MongoDB Atlas!");
+    } catch (erro) {
+        console.error("🔴 Erro ao conectar no MongoDB:", erro);
+    }
+}
+conectarBanco();
+
+// ========== CONFIGURAÇÕES DE SEGURANÇA ==========
 const CHAVE_SECRETA = "MeApp-2026-05-19-NZ-8y$y$y$y$&-8d)(?!?!{'json','MeAppSHA-256'}'/";
-
-// ========== PASTAS ==========
-const PASTA_USUARIOS = path.join(__dirname, 'users');
-const PASTA_UPLOADS = path.join(__dirname, 'photos');
-const PASTA_CONTATOS = path.join(__dirname, 'contacts');  
-
-// Criar pastas
-if (!fs.existsSync(PASTA_USUARIOS)) fs.mkdirSync(PASTA_USUARIOS);
-if (!fs.existsSync(PASTA_UPLOADS)) fs.mkdirSync(PASTA_UPLOADS);
-if (!fs.existsSync(PASTA_CONTATOS)) fs.mkdirSync(PASTA_CONTATOS);  
 
 // ========== VARIÁVEIS GLOBAIS ==========
 let historico = [];
 let codigosVerificacao = {};
 
-// ========== FUNÇÃO DESCRIPTOGRAFAR XOR ==========
 function descriptografarXOR(dadosBase64) {
     try {
         const dados = Buffer.from(dadosBase64, 'base64');
@@ -42,7 +59,7 @@ function descriptografarXOR(dadosBase64) {
 }
 
 // ========== ROTA: UPLOAD DE FOTO ==========
-app.post('/upload_foto', (req, res) => {
+app.post('/upload_foto', async (req, res) => {
     const { email, foto } = req.body;
     
     if (!email || !foto) {
@@ -50,90 +67,138 @@ app.post('/upload_foto', (req, res) => {
     }
     
     const fotoLimpa = foto.replace(/[\s\n\r]/g, '');
-    
     const fotoBuffer = descriptografarXOR(fotoLimpa);
+    
     if (!fotoBuffer) {
         return res.status(400).json({ erro: "Falha na descriptografia" });
     }
     
-    const caminhoFoto = path.join(PASTA_UPLOADS, `${email}.jpg`);
-    fs.writeFileSync(caminhoFoto, fotoBuffer);
+    const emailLimpo = email.trim().toLowerCase();
     
-    res.json({ status: "ok" });
+    try {
+        const fotoBase64 = fotoBuffer.toString('base64');
+        
+        const resultado = await usuariosColl.updateOne(
+            { email: emailLimpo },
+            { $set: { foto: fotoBase64 } }
+        );
+        
+        if (resultado.matchedCount === 0) {
+            return res.status(404).json({ erro: "Usuário não encontrado para associar a foto." });
+        }
+        
+        res.json({ status: "ok" });
+    } catch (erro) {
+        res.status(500).json({ erro: "Erro ao salvar foto no banco de dados." });
+    }
 });
 
-// ========== ROTAS DE CONTATOS ==========
-app.post('/salvar_contatos', (req, res) => {
+// ========== ROTAS DE CONTATOS (CORRIGIDAS PARA ENCAIXAR NO SKETCHWARE) ==========
+app.post('/salvar_contatos', async (req, res) => {
     const { email, contatos } = req.body;
     
     if (!email || !contatos) {
         return res.status(400).json({ erro: "Dados incompletos" });
     }
     
-    const caminhoContatos = path.join(PASTA_CONTATOS, `${email}.json`);
-    fs.writeFileSync(caminhoContatos, JSON.stringify(contatos, null, 2));
+    const emailLimpo = email.trim().toLowerCase();
     
-    res.json({ status: "ok" });
-});
-
-app.get('/buscar_contatos', (req, res) => {
-    const { email } = req.query;
-    const caminhoContatos = path.join(PASTA_CONTATOS, `${email}.json`);
-    
-    if (!fs.existsSync(caminhoContatos)) {
-        return res.json({ status: "ok", contatos: [] });
-    }
-    
-    const contatos = JSON.parse(fs.readFileSync(caminhoContatos, 'utf-8'));
-    res.json({ status: "ok", contatos: contatos });
-});
-
-app.get('/get_foto_contato', (req, res) => {
-    const { email } = req.query;
-    const caminhoFoto = path.join(PASTA_UPLOADS, `${email}.jpg`);
-    
-    if (!fs.existsSync(caminhoFoto)) {
-        return res.status(404).json({ status: "sem_foto" });
-    }
-    
-    const fotoBuffer = fs.readFileSync(caminhoFoto);
-    res.writeHead(200, { 'Content-Type': 'image/jpeg' });
-    res.end(fotoBuffer);
-});
-
-// ========== ROTA: BAIXAR FOTO ==========
-app.get('/get_foto', (req, res) => {
-    const { email } = req.query;
-    const caminhoFoto = path.join(PASTA_UPLOADS, `${email}.jpg`);
-    
-    if (!fs.existsSync(caminhoFoto)) {
-        return res.json({ status: "sem_foto" });
-    }
+    // Força garantir que contatos seja uma Array estruturada
+    const listaContatos = Array.isArray(contatos) ? contatos : [];
     
     try {
-        const fotoBuffer = fs.readFileSync(caminhoFoto);
+        await contatosColl.updateOne(
+            { email: emailLimpo },
+            { $set: { contatos: listaContatos, atualizadoEm: new Date() } },
+            { upsert: true } 
+        );
+        res.json({ status: "ok" });
+    } catch (erro) {
+        res.status(500).json({ erro: "Erro ao salvar contatos no banco." });
+    }
+});
+
+app.get('/buscar_contatos', async (req, res) => {
+    const { email } = req.query;
+    if (!email) return res.status(400).json({ erro: "Email é obrigatório" });
+    
+    const emailLimpo = email.trim().toLowerCase();
+    
+    try {
+        const registro = await contatosColl.findOne({ email: emailLimpo });
+        
+        // CORREÇÃO CRÍTICA: Retorna a array limpa diretamente para o Android não se perder no parse
+        if (!registro || !registro.contatos) {
+            return res.status(200).json([]);
+        }
+        
+        // Retorna a lista direto para o Sketchware ler nativamente como JSONArray
+        res.status(200).json(registro.contatos);
+    } catch (erro) {
+        res.status(500).json([]);
+    }
+});
+
+app.get('/get_foto_contato', async (req, res) => {
+    const { email } = req.query;
+    if (!email) return res.status(400).json({ erro: "Email é obrigatório" });
+    
+    const emailLimpo = email.trim().toLowerCase();
+    
+    try {
+        const usuario = await usuariosColl.findOne({ email: emailLimpo });
+        if (!usuario || !usuario.foto) {
+            return res.status(404).json({ status: "sem_foto" });
+        }
+        
+        const fotoBuffer = Buffer.from(usuario.foto, 'base64');
         res.writeHead(200, { 'Content-Type': 'image/jpeg' });
         res.end(fotoBuffer);
     } catch (erro) {
-        console.error(erro);
+        res.status(500).json({ erro: "Erro ao buscar foto." });
+    }
+});
+
+app.get('/get_foto', async (req, res) => {
+    const { email } = req.query;
+    if (!email) return res.status(400).json({ erro: "Email é obrigatório" });
+    
+    const emailLimpo = email.trim().toLowerCase();
+    
+    try {
+        const usuario = await usuariosColl.findOne({ email: emailLimpo });
+        if (!usuario || !usuario.foto) {
+            return res.json({ status: "sem_foto" });
+        }
+        
+        const fotoBuffer = Buffer.from(usuario.foto, 'base64');
+        res.writeHead(200, { 'Content-Type': 'image/jpeg' });
+        res.end(fotoBuffer);
+    } catch (erro) {
         res.json({ status: "erro" });
     }
 });
 
-// ========== ROTA: DELETAR FOTO ==========
-app.post('/deletar_foto', (req, res) => {
+app.post('/deletar_foto', async (req, res) => {
     const { email } = req.body;
-    const caminhoFoto = path.join(PASTA_UPLOADS, `${email}.jpg`);
+    if (!email) return res.status(400).json({ erro: "Email é obrigatório" });
     
-    if (fs.existsSync(caminhoFoto)) {
-        fs.unlinkSync(caminhoFoto);
-        console.log(`🗑️ Foto deletada para: ${email}`);
+    const emailLimpo = email.trim().toLowerCase();
+    
+    try {
+        await usuariosColl.updateOne(
+            { email: emailLimpo },
+            { $unset: { foto: "" } } 
+        );
+        console.log(`🗑️ Foto deletada no banco para: ${emailLimpo}`);
+        res.json({ status: "ok" });
+    } catch (erro) {
+        res.status(500).json({ erro: "Erro ao deletar foto." });
     }
-    res.json({ status: "ok" });
 });
 
-// ========== ROTA 1: SOLICITAR CADASTRO ==========
-app.post('/cadastro', (req, res) => {
+// ========== CADASTRO ==========
+app.post('/cadastro', async (req, res) => {
     const { email, senha } = req.body;
     
     if (!email || !senha) {
@@ -141,25 +206,28 @@ app.post('/cadastro', (req, res) => {
     }
 
     const emailLimpo = email.trim().toLowerCase();
-    const caminhoArquivo = path.join(PASTA_USUARIOS, `${emailLimpo}.json`);
     
-    if (fs.existsSync(caminhoArquivo)) {
-        return res.status(400).json({ erro: "Este e-mail já está cadastrado!" });
+    try {
+        const usuarioExistente = await usuariosColl.findOne({ email: emailLimpo });
+        if (usuarioExistente) {
+            return res.status(400).json({ erro: "Este e-mail já está cadastrado!" });
+        }
+
+        const codigo = Math.floor(100000 + Math.random() * 900000).toString();
+        
+        codigosVerificacao[emailLimpo] = {
+            codigo: codigo,
+            senhaProvisoria: senha
+        };
+
+        console.log(`📧 [CADASTRO] Email: ${emailLimpo} | Código: ${codigo}`);
+        return res.status(200).json({ status: "ok", mensagem: "Código gerado com sucesso!" });
+    } catch (erro) {
+        return res.status(500).json({ erro: "Erro ao verificar disponibilidade de e-mail." });
     }
-
-    const codigo = Math.floor(100000 + Math.random() * 900000).toString();
-    
-    codigosVerificacao[emailLimpo] = {
-        codigo: codigo,
-        senhaProvisoria: senha
-    };
-
-    console.log(`📧 [CADASTRO] Email: ${emailLimpo} | Código: ${codigo}`);
-    return res.status(200).json({ status: "ok", mensagem: "Código gerado com sucesso!" });
 });
 
-// ========== ROTA 2: CONFIRMAR CADASTRO ==========
-app.post('/confirmar-cadastro', (req, res) => {
+app.post('/confirmar-cadastro', async (req, res) => {
     const { email, codigo } = req.body;
 
     if (!email || !codigo) {
@@ -178,25 +246,24 @@ app.post('/confirmar-cadastro', (req, res) => {
         const dadosSalvar = {
             email: emailLimpo,
             senha: dadosProvisorios.senhaProvisoria,
-            criadoEm: new Date().toISOString()
+            criadoEm: new Date().toISOString(),
+            foto: "" 
         };
-
-        const caminhoArquivo = path.join(PASTA_USUARIOS, `${emailLimpo}.json`);
         
         try {
-            fs.writeFileSync(caminhoArquivo, JSON.stringify(dadosSalvar, null, 2), 'utf-8');
+            await usuariosColl.insertOne(dadosSalvar);
             delete codigosVerificacao[emailLimpo];
             return res.status(200).json({ status: "ok", mensagem: "Cadastro concluído com sucesso!" });
-        } catch (erroFs) {
-            return res.status(500).json({ erro: "Erro interno ao salvar dados no servidor." });
+        } catch (erroBanco) {
+            return res.status(500).json({ erro: "Erro interno ao salvar dados no banco de dados." });
         }
     } else {
         return res.status(401).json({ erro: "Código incorreto!" });
     }
 });
 
-// ========== ROTA 3: LOGIN ==========
-app.post('/login', (req, res) => {
+// ========== LOGIN ==========
+app.post('/login', async (req, res) => {
     const { email, senha } = req.body;
 
     if (!email || !senha) {
@@ -204,15 +271,13 @@ app.post('/login', (req, res) => {
     }
 
     const emailLimpo = email.trim().toLowerCase();
-    const caminhoArquivo = path.join(PASTA_USUARIOS, `${emailLimpo}.json`);
-
-    if (!fs.existsSync(caminhoArquivo)) {
-        return res.status(401).json({ erro: "E-mail ou senha incorretos." });
-    }
 
     try {
-        const conteudoArquivo = fs.readFileSync(caminhoArquivo, 'utf-8');
-        const dadosUsuario = JSON.parse(conteudoArquivo);
+        const dadosUsuario = await usuariosColl.findOne({ email: emailLimpo });
+
+        if (!dadosUsuario) {
+            return res.status(401).json({ erro: "E-mail ou senha incorretos." });
+        }
 
         if (dadosUsuario.senha === senha) {
             return res.status(200).json({ status: "ok", usuario: emailLimpo });
@@ -220,11 +285,11 @@ app.post('/login', (req, res) => {
             return res.status(401).json({ erro: "E-mail ou senha incorretos." });
         }
     } catch (e) {
-        return res.status(500).json({ erro: "Erro ao ler dados de autenticação." });
+        return res.status(500).json({ erro: "Erro ao ler dados de autenticação no banco." });
     }
 });
 
-// ========== ROTA: RECUPERAR MENSAGENS ==========
+// ========== MENSAGENS ==========
 app.get('/mensagens', (req, res) => {
     const { email } = req.query;
     
@@ -252,7 +317,6 @@ app.get('/mensagens', (req, res) => {
     res.json(mensagensDoUsuario);
 });
 
-// ========== ROTA: ENVIAR MENSAGEM VIA APP ==========
 app.post('/enviar', (req, res) => {
     const { id, chat_id, usuario, texto, destinatario } = req.body;
     
@@ -276,11 +340,10 @@ app.post('/enviar', (req, res) => {
     };
     
     historico.push(novaMsg);
-    io.emit('recebe_mensagem', novaMsg); // Envia para o painel web escutar também
+    io.emit('recebe_mensagem', novaMsg);
     res.json({ status: "ok" });
 });
 
-// ========== ROTA: CONFIRMAR RECEBIMENTO ==========
 app.post('/confirmar_recebimento', (req, res) => {
     const { email, ids } = req.body; 
     const emailFiltro = email.trim().toLowerCase();
@@ -295,7 +358,6 @@ app.post('/confirmar_recebimento', (req, res) => {
     res.json({ status: "ok", removidas: ids.length });
 });
 
-// ========== ROTA: DELETAR CONVERSA COMPLETA NO SERVIDOR ==========
 app.post('/mensagens/deletar', (req, res) => {
     const { meuEmail, contatoEmail } = req.query;
 
@@ -319,13 +381,10 @@ app.post('/mensagens/deletar', (req, res) => {
     });
 
     const deletadas = tamanhoAntes - historico.length;
-    console.log(`🗑️ [SERVER] Conversa limpa entre ${email1} e ${email2}. Foram removidas ${deletadas} mensagens.`);
-    
     res.json({ status: "ok", mensagens_deletadas: deletadas });
 });
 
-// ========== SOCKET.IO (USADO EXCLUSIVAMENTE PELO PAINEL WEB) ==========
-// ========== SOCKET.IO (CALIBRADO COM A REGRA ALFABÉTICA DO APP) ==========
+// ========== SOCKET.IO CORRIGIDO ==========
 io.on('connection', (socket) => {
     socket.on('envia_mensagem', (dados) => {
         let { id, chat_id, usuario, texto } = dados;
@@ -333,25 +392,22 @@ io.on('connection', (socket) => {
         if (!id) id = timestamp + "_" + Math.floor(Math.random() * 9999);
         
         let remetente = usuario ? usuario.trim().toLowerCase() : "admin_web";
-        let destinatario = "";
         let chatIdValido = "";
 
-        // Se veio do painel web apontando para um contato específico
+        // CORREÇÃO: Trata corretamente se o chat já vier formatado ou se for ID simples
         if (chat_id && chat_id.startsWith("Contato_")) {
-            destinatario = chat_id.replace("Contato_", "").trim().toLowerCase();
-            
-            // IGUAL AO APP: Organiza em ordem alfabética para bater o ID unificado
-            const listaEmails = [remetente, destinatario].sort();
+            chatIdValido = chat_id;
+        } else if (chat_id) {
+            const listaEmails = [remetente, chat_id.trim().toLowerCase()].sort();
             chatIdValido = "Contato_" + listaEmails[0] + "_" + listaEmails[1];
         } else {
-            chatIdValido = chat_id || "Contato_Geral";
-            destinatario = "geral";
+            chatIdValido = "Contato_Geral";
         }
 
         const msgCompleta = { 
             id: id, 
             chat_id: chatIdValido, 
-            email_contato: remetente, // Define quem mandou a mensagem
+            email_contato: remetente, 
             usuario: remetente, 
             texto: texto, 
             timestamp: timestamp 
@@ -359,11 +415,10 @@ io.on('connection', (socket) => {
         
         historico.push(msgCompleta);
         io.emit('recebe_mensagem', msgCompleta); 
-        console.log(`✉️ [WEB ADMIN] Mensagem injetada no ChatId: ${chatIdValido}`);
     });
 });
 
-// ========== PAINEL WEB ATUALIZADO ==========
+// ========== PAINEL WEB ==========
 app.get('/', (req, res) => {
     res.send(`
         <html>
@@ -383,15 +438,9 @@ app.get('/', (req, res) => {
             <body>
                 <div class="container">
                     <h2>MeApp - Admin</h2>
-                    <label style="font-size:12px; color:#666; font-weight:bold;">Para quem vai a mensagem? (E-mail logado no celular)</label>
-                    <input id="c" placeholder="Ex: meu_celular@teste.com">
-                    
-                    <label style="font-size:12px; color:#666; font-weight:bold;">Quem está enviando? (Conta fake de teste)</label>
-                    <input id="u" placeholder="Ex: amigodeteste@teste.com">
-                    
-                    <label style="font-size:12px; color:#666; font-weight:bold;">Mensagem</label>
+                    <input id="c" placeholder="Seu e-mail (Ex: admin@teste.com)">
+                    <input id="u" placeholder="E-mail do Destinatário (Ex: celular@teste.com)">
                     <input id="m" placeholder="Digite o texto aqui">
-                    
                     <button onclick="enviarPelaWeb()">Enviar para o Celular</button>
                     <div id="chat"></div>
                 </div>
@@ -399,11 +448,11 @@ app.get('/', (req, res) => {
                 <script>
                     const socket = io();
                     function enviarPelaWeb() {
-                        if(!c.value || !u.value || !m.value) return alert("Preencha todos os campos para simular as duas contas!");
+                        if(!c.value || !u.value || !m.value) return alert("Preencha todos os campos!");
                         socket.emit('envia_mensagem', {
                             id: "web_" + Date.now() + "_" + Math.floor(Math.random() * 999),
-                            chat_id: "Contato_" + c.value.trim(),
-                            usuario: u.value.trim(),
+                            chat_id: u.value.trim(),
+                            usuario: c.value.trim(),
                             texto: m.value
                         });
                         m.value = "";
@@ -422,7 +471,5 @@ app.get('/', (req, res) => {
 
 // ========== INICIAR SERVIDOR ==========
 http.listen(3000, '0.0.0.0', () => {
-    console.log('🟢 Servidor rodando na porta 3000');
-    console.log('📁 Pasta de usuários:', PASTA_USUARIOS);
-    console.log('📸 Pasta de fotos:', PASTA_UPLOADS);
+    console.log('🟢 Servidor atualizado rodando na porta 3000 com MongoDB Atlas ativo!');
 });
