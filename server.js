@@ -529,6 +529,7 @@ app.get('/', (req, res) => {
 });
 
 // ========== ATUALIZAR NOME DO PERFIL ==========
+// ========== ATUALIZAR NOME DO PERFIL ==========
 app.post('/atualizar_nome', async (req, res) => {
     const { email, nome } = req.body;
     
@@ -555,6 +556,9 @@ app.post('/atualizar_nome', async (req, res) => {
         if (resultado.matchedCount === 0) {
             return res.status(404).json({ erro: "Usuário não encontrado" });
         }
+        
+        // 🔥 ADICIONE ESTA LINHA AQUI 🔥
+        io.emit('nome_atualizado', { email: emailLimpo, nome: nomeLimpo });
         
         res.json({ status: "ok", mensagem: "Nome atualizado com sucesso!" });
     } catch (erro) {
