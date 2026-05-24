@@ -284,7 +284,6 @@ app.post('/confirmar-cadastro', async (req, res) => {
 });
 
 // ========== LOGIN ==========
-// ========== LOGIN ==========
 app.post('/login', async (req, res) => {
     const { email, senha } = req.body;
 
