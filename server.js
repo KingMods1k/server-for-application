@@ -472,6 +472,103 @@ app.get('/', (req, res) => {
     `);
 });
 
+// ========== ATUALIZAR NOME DO PERFIL ==========
+app.post('/atualizar_nome', async (req, res) => {
+    const { email, nome } = req.body;
+    
+    if (!email || !nome) {
+        return res.status(400).json({ erro: "Email e nome são obrigatórios" });
+    }
+    
+    const emailLimpo = email.trim().toLowerCase();
+    const nomeLimpo = nome.trim();
+    
+    if (nomeLimpo.length < 1 || nomeLimpo.length > 50) {
+        return res.status(400).json({ erro: "Nome deve ter entre 1 e 50 caracteres" });
+    }
+    
+    try {
+        const resultado = await usuariosColl.updateOne(
+            { email: emailLimpo },
+            { $set: { 
+                nome_perfil: nomeLimpo,
+                atualizadoEm: new Date() 
+            }}
+        );
+        
+        if (resultado.matchedCount === 0) {
+            return res.status(404).json({ erro: "Usuário não encontrado" });
+        }
+        
+        res.json({ status: "ok", mensagem: "Nome atualizado com sucesso!" });
+    } catch (erro) {
+        console.error("Erro ao atualizar nome:", erro);
+        res.status(500).json({ erro: "Erro ao salvar nome no banco" });
+    }
+});
+
+// ========== BUSCAR NOME DO PERFIL ==========
+app.get('/get_nome', async (req, res) => {
+    const { email } = req.query;
+    
+    if (!email) {
+        return res.status(400).json({ erro: "Email é obrigatório" });
+    }
+    
+    const emailLimpo = email.trim().toLowerCase();
+    
+    try {
+        const usuario = await usuariosColl.findOne({ email: emailLimpo });
+        
+        if (!usuario) {
+            return res.status(404).json({ erro: "Usuário não encontrado" });
+        }
+        
+        const nomeExibicao = usuario.nome_perfil || emailLimpo.split('@')[0];
+        
+        res.json({ 
+            status: "ok", 
+            nome: nomeExibicao,
+            email: emailLimpo
+        });
+    } catch (erro) {
+        console.error("Erro ao buscar nome:", erro);
+        res.status(500).json({ erro: "Erro ao buscar nome do usuário" });
+    }
+});
+
+// ========== BUSCAR NOMES EM LOTE (PRA LISTA DE CONTATOS) ==========
+app.post('/get_nomes_lote', async (req, res) => {
+    const { emails } = req.body;
+    
+    if (!emails || !Array.isArray(emails)) {
+        return res.status(400).json({ erro: "Lista de emails é obrigatória" });
+    }
+    
+    try {
+        const usuarios = await usuariosColl.find(
+            { email: { $in: emails.map(e => e.trim().toLowerCase()) } },
+            { projection: { email: 1, nome_perfil: 1 } }
+        ).toArray();
+        
+        const resultado = {};
+        usuarios.forEach(user => {
+            resultado[user.email] = user.nome_perfil || user.email.split('@')[0];
+        });
+        
+        emails.forEach(email => {
+            const emailLimpo = email.trim().toLowerCase();
+            if (!resultado[emailLimpo]) {
+                resultado[emailLimpo] = emailLimpo.split('@')[0];
+            }
+        });
+        
+        res.json(resultado);
+    } catch (erro) {
+        console.error("Erro ao buscar nomes em lote:", erro);
+        res.status(500).json({ erro: "Erro ao buscar nomes" });
+    }
+});
 // ========== INICIAR SERVIDOR ==========
 http.listen(3000, '0.0.0.0', () => {
     console.log('🟢 Servidor atualizado rodando na porta 3000 com MongoDB Atlas ativo!');
