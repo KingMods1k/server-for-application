@@ -112,7 +112,41 @@ app.post('/upload_foto', async (req, res) => {
         res.status(500).json({ erro: "Erro ao salvar foto no banco de dados." });
     }
 });
-
+// ========== BUSCAR USUÁRIO (APELIDO PARA O APP) ==========
+app.get('/usuario', async (req, res) => {
+    const { email } = req.query;
+    
+    if (!email) {
+        return res.status(400).json({ erro: "Email é obrigatório" });
+    }
+    
+    const emailLimpo = email.trim().toLowerCase();
+    
+    try {
+        let usuario = await usuariosColl.findOne({ email: emailLimpo });
+        
+        if (!usuario) {
+            return res.status(404).json({ erro: "Usuário não encontrado" });
+        }
+        
+        if (!usuario.nome_perfil) {
+            const nomePadrao = emailLimpo.split('@')[0];
+            await usuariosColl.updateOne(
+                { email: emailLimpo },
+                { $set: { nome_perfil: nomePadrao } }
+            );
+            usuario.nome_perfil = nomePadrao;
+        }
+        
+        res.json({ 
+            nome: usuario.nome_perfil,
+            email: emailLimpo
+        });
+    } catch (erro) {
+        console.error("Erro ao buscar usuário:", erro);
+        res.status(500).json({ erro: "Erro ao buscar usuário" });
+    }
+});
 // ========== ROTAS DE CONTATOS (CORRIGIDAS PARA ENCAIXAR NO SKETCHWARE) ==========
 app.post('/salvar_contatos', async (req, res) => {
     const { email, contatos } = req.body;
