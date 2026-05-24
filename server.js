@@ -39,6 +39,23 @@ async function conectarBanco() {
     }
 }
 conectarBanco();
+// ========== FUNÇÃO PARA GARANTIR QUE TODO USUÁRIO TENHA nome_perfil ==========
+async function garantirNomePerfil(email, nomePadrao) {
+    try {
+        const usuario = await usuariosColl.findOne({ email: email });
+        
+        if (usuario && !usuario.nome_perfil) {
+            // Se o usuário existe mas não tem nome_perfil, adiciona
+            await usuariosColl.updateOne(
+                { email: email },
+                { $set: { nome_perfil: nomePadrao } }
+            );
+            console.log(`✅ Adicionado nome_perfil para: ${email} -> ${nomePadrao}`);
+        }
+    } catch (erro) {
+        console.error("Erro ao garantir nome_perfil:", erro);
+    }
+}
 
 // ========== CONFIGURAÇÕES DE SEGURANÇA ==========
 const CHAVE_SECRETA = "MeApp-2026-05-19-NZ-8y$y$y$y$&-8d)(?!?!{'json','MeAppSHA-256'}'/";
@@ -267,6 +284,7 @@ app.post('/confirmar-cadastro', async (req, res) => {
 });
 
 // ========== LOGIN ==========
+// ========== LOGIN ==========
 app.post('/login', async (req, res) => {
     const { email, senha } = req.body;
 
@@ -282,6 +300,10 @@ app.post('/login', async (req, res) => {
         if (!dadosUsuario) {
             return res.status(401).json({ erro: "E-mail ou senha incorretos." });
         }
+
+        // 🔥 ADICIONA ISSO: Garante que o usuário tenha nome_perfil
+        const nomePadrao = emailLimpo.split('@')[0];
+        await garantirNomePerfil(emailLimpo, nomePadrao);
 
         if (dadosUsuario.senha === senha) {
             return res.status(200).json({ status: "ok", usuario: emailLimpo });
@@ -509,6 +531,7 @@ app.post('/atualizar_nome', async (req, res) => {
 });
 
 // ========== BUSCAR NOME DO PERFIL ==========
+// ========== BUSCAR NOME DO PERFIL ==========
 app.get('/get_nome', async (req, res) => {
     const { email } = req.query;
     
@@ -519,13 +542,24 @@ app.get('/get_nome', async (req, res) => {
     const emailLimpo = email.trim().toLowerCase();
     
     try {
-        const usuario = await usuariosColl.findOne({ email: emailLimpo });
+        let usuario = await usuariosColl.findOne({ email: emailLimpo });
         
         if (!usuario) {
             return res.status(404).json({ erro: "Usuário não encontrado" });
         }
         
-        const nomeExibicao = usuario.nome_perfil || emailLimpo.split('@')[0];
+        // 🔥 SE NÃO TIVER nome_perfil, ADICIONA AGORA
+        if (!usuario.nome_perfil) {
+            const nomePadrao = emailLimpo.split('@')[0];
+            await usuariosColl.updateOne(
+                { email: emailLimpo },
+                { $set: { nome_perfil: nomePadrao } }
+            );
+            usuario.nome_perfil = nomePadrao;
+            console.log(`✅ Adicionado nome_perfil automaticamente para: ${emailLimpo}`);
+        }
+        
+        const nomeExibicao = usuario.nome_perfil;
         
         res.json({ 
             status: "ok", 
