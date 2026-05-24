@@ -247,11 +247,12 @@ app.post('/confirmar-cadastro', async (req, res) => {
 
     if (dadosProvisorios.codigo === codigo.trim()) {
         const dadosSalvar = {
-            email: emailLimpo,
-            senha: dadosProvisorios.senhaProvisoria,
-            criadoEm: new Date().toISOString(),
-            foto: "" 
-        };
+    email: emailLimpo,
+    senha: dadosProvisorios.senhaProvisoria,
+    criadoEm: new Date().toISOString(),
+    foto: "",
+    nome_perfil: emailLimpo.split('@')[0]  
+};
         
         try {
             await usuariosColl.insertOne(dadosSalvar);
