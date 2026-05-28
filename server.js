@@ -77,6 +77,53 @@ function descriptografarXOR(dadosBase64) {
         return null;
     }
 }
+// ========== BUSCAR FOTOS EM LOTE (PRA LISTA DE CONTATOS) ==========
+app.get('/get_fotos_lote', async (req, res) => {
+    const { emails } = req.query;
+    
+    if (!emails) {
+        return res.status(400).json({ erro: "Lista de emails é obrigatória" });
+    }
+    
+    try {
+        // Decodifica o JSON de emails
+        const listaEmails = JSON.parse(emails);
+        
+        if (!Array.isArray(listaEmails) || listaEmails.length === 0) {
+            return res.status(400).json({ erro: "Lista de emails inválida" });
+        }
+        
+        // Busca todos os usuários de uma vez
+        const usuarios = await usuariosColl.find(
+            { email: { $in: listaEmails.map(e => e.trim().toLowerCase()) } },
+            { projection: { email: 1, foto: 1 } }
+        ).toArray();
+        
+        const resultado = {};
+        
+        usuarios.forEach(usuario => {
+            if (usuario.foto && usuario.foto !== "") {
+                // Retorna a foto como está (já em base64)
+                resultado[usuario.email] = usuario.foto;
+            } else {
+                resultado[usuario.email] = null;
+            }
+        });
+        
+        // Garante que todos os emails pedidos tenham uma resposta
+        listaEmails.forEach(email => {
+            const emailLimpo = email.trim().toLowerCase();
+            if (!resultado[emailLimpo]) {
+                resultado[emailLimpo] = null;
+            }
+        });
+        
+        res.json(resultado);
+    } catch (erro) {
+        console.error("Erro ao buscar fotos em lote:", erro);
+        res.status(500).json({ erro: "Erro ao buscar fotos" });
+    }
+});
 
 // ========== ROTA: UPLOAD DE FOTO ==========
 app.post('/upload_foto', async (req, res) => {
