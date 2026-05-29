@@ -539,6 +539,7 @@ app.post('/mensagens/deletar', (req, res) => {
 });
 
 // ========== SOCKET.IO CORRIGIDO ==========
+// ========== SOCKET.IO CORRIGIDO ==========
 io.on('connection', (socket) => {
     socket.on('envia_mensagem', (dados) => {
         let { id, chat_id, usuario, texto } = dados;
@@ -546,9 +547,21 @@ io.on('connection', (socket) => {
         if (!id) id = timestamp + "_" + Math.floor(Math.random() * 9999);
         
         let remetente = usuario ? usuario.trim().toLowerCase() : "admin_web";
+        
+        // 🔥 DESCRIPTOGRAFAR SE VIER DO PAINEL WEB
+        let textoFinal = texto;
+        try {
+            const CHAVE_SERVER = "S3rv3rK3yF0rW3bP4n3l#2024!Secure";
+            const decipher = crypto.createDecipheriv('aes-256-cbc', Buffer.from(CHAVE_SERVER), Buffer.alloc(16, 0));
+            let decifrado = decipher.update(texto, 'base64', 'utf8');
+            decifrado += decipher.final('utf8');
+            textoFinal = decifrado;
+        } catch(e) {
+            // Não é criptografado (veio do app)
+            textoFinal = texto;
+        }
+        
         let chatIdValido = "";
-
-        // CORREÇÃO: Trata corretamente se o chat já vier formatado ou se for ID simples
         if (chat_id && chat_id.startsWith("Contato_")) {
             chatIdValido = chat_id;
         } else if (chat_id) {
@@ -563,7 +576,7 @@ io.on('connection', (socket) => {
             chat_id: chatIdValido, 
             email_contato: remetente, 
             usuario: remetente, 
-            texto: texto, 
+            texto: textoFinal, 
             timestamp: timestamp 
         };
         
@@ -572,7 +585,6 @@ io.on('connection', (socket) => {
     });
 });
 
-// ========== PAINEL WEB ==========
 // ========== PAINEL WEB COM CRIPTOGRAFIA ==========
 app.get('/', (req, res) => {
     res.send(`
