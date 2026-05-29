@@ -585,36 +585,50 @@ io.on('connection', (socket) => {
     });
 });
 
-// ========== PAINEL WEB COM CRIPTOGRAFIA ==========
+// ========== PAINEL WEB COM LOGIN ==========
 app.get('/', (req, res) => {
     res.send(`
         <html>
             <head>
                 <meta charset="utf-8">
-                <title>Painel Admin - MeApp</title>
+                <title>MeApp - Admin</title>
                 <style>
-                    body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
-                    .container { max-width: 600px; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin: 0 auto; }
-                    input { display: block; width: 100%; margin-bottom: 10px; padding: 10px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; }
-                    button { width: 100%; padding: 10px; background: #e53935; color: white; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; }
-                    #chat { margin-top: 20px; height: 300px; overflow-y: auto; border: 1px solid #eee; padding: 10px; background: #fafafa; border-radius: 5px; }
-                    .msg-box { margin-bottom: 10px; padding: 8px; border-bottom: 1px solid #eee; }
-                    .chat-tag { background: #e53935; color: white; padding: 2px 6px; border-radius: 3px; font-size: 11px; font-weight: bold; }
+                    body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+                    .container { max-width: 500px; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+                    input { display: block; width: 100%; margin-bottom: 15px; padding: 12px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; font-size: 16px; }
+                    button { width: 100%; padding: 12px; background: #e53935; color: white; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; font-size: 16px; }
+                    button:hover { background: #c62828; }
+                    .error { color: red; margin-bottom: 15px; text-align: center; }
+                    h2 { text-align: center; color: #e53935; margin-bottom: 25px; }
                 </style>
-                <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
             </head>
             <body>
-                <div class="container">
-                    <h2>MeApp - Admin</h2>
-                    <input id="c" placeholder="Seu e-mail (Ex: admin@teste.com)">
-                    <input id="u" placeholder="E-mail do Destinatário (Ex: celular@teste.com)">
-                    <input id="m" placeholder="Digite o texto aqui">
-                    <button onclick="enviarPelaWeb()">Enviar para o Celular</button>
-                    <div id="chat"></div>
+                <div class="container" id="loginContainer">
+                    <h2>🔐 Painel Admin</h2>
+                    <input type="text" id="email" placeholder="E-mail" value="server@server">
+                    <input type="password" id="senha" placeholder="Senha">
+                    <button onclick="fazerLogin()">Entrar</button>
+                    <div id="errorMsg" class="error"></div>
                 </div>
+                
+                <div class="container" id="chatContainer" style="display:none; max-width: 800px;">
+                    <h2>📨 MeApp - Admin</h2>
+                    <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                        <input type="text" id="destinatario" placeholder="E-mail do destinatário" style="flex:2;">
+                        <input type="text" id="mensagem" placeholder="Digite sua mensagem" style="flex:3;">
+                        <button onclick="enviarMensagem()" style="width: auto; padding: 12px 20px;">Enviar</button>
+                        <button onclick="sair()" style="width: auto; background: #666;">Sair</button>
+                    </div>
+                    <div id="chatArea" style="height: 400px; overflow-y: auto; border: 1px solid #eee; padding: 10px; background: #fafafa; border-radius: 5px;">
+                        <div style="text-align: center; color: #999;">Conectado como server@server</div>
+                    </div>
+                </div>
+                
                 <script src="/socket.io/socket.io.js"></script>
+                <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
                 <script>
-                    const socket = io();
+                    let socket = null;
+                    let logado = false;
                     const CHAVE_SERVER = "S3rv3rK3yF0rW3bP4n3l#2024!Secure";
                     
                     function criptografar(texto) {
@@ -630,33 +644,120 @@ app.get('/', (req, res) => {
                         }
                     }
                     
-                    function enviarPelaWeb() {
-                        if(!c.value || !u.value || !m.value) return alert("Preencha todos os campos!");
+                    async function fazerLogin() {
+                        const email = document.getElementById('email').value.trim();
+                        const senha = document.getElementById('senha').value;
                         
-                        const textoCriptografado = criptografar(m.value);
-                        
-                        socket.emit('envia_mensagem', {
-                            id: "web_" + Date.now() + "_" + Math.floor(Math.random() * 999),
-                            chat_id: u.value.trim(),
-                            usuario: c.value.trim(),
-                            texto: textoCriptografado
-                        });
-                        m.value = "";
+                        if (email === 'server@server' && senha === 'vxz') {
+                            logado = true;
+                            document.getElementById('loginContainer').style.display = 'none';
+                            document.getElementById('chatContainer').style.display = 'block';
+                            
+                            // Conectar Socket.IO
+                            socket = io();
+                            
+                            socket.on('connect', () => {
+                                socket.emit('identificar', 'server@server');
+                                console.log('✅ Conectado ao servidor');
+                            });
+                            
+                            socket.on('recebe_mensagem', (dados) => {
+                                let hora = new Date(dados.timestamp).toLocaleTimeString('pt-BR');
+                                let textoExibido = descriptografar(dados.texto);
+                                let chatDiv = document.getElementById('chatArea');
+                                chatDiv.innerHTML += '<div style="margin-bottom: 10px; padding: 8px; border-bottom: 1px solid #eee;"><b>' + dados.usuario + ':</b> ' + textoExibido + ' <small style="color:#999;">(' + hora + ')</small></div>';
+                                chatDiv.scrollTop = chatDiv.scrollHeight;
+                            });
+                            
+                            // Criar conta fake do servidor no backend
+                            try {
+                                const response = await fetch('/criar_conta_server', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ email: 'server@server', senha: 'vxz' })
+                                });
+                                const result = await response.json();
+                                console.log('Conta server:', result);
+                            } catch(e) {
+                                console.log('Conta server já existe ou erro:', e);
+                            }
+                            
+                        } else {
+                            document.getElementById('errorMsg').innerText = '❌ E-mail ou senha incorretos!';
+                        }
                     }
                     
-                    socket.on('recebe_mensagem', (d) => {
-                        let hora = new Date(d.timestamp).toLocaleTimeString('pt-BR');
-                        let textoExibido = descriptografar(d.texto);
-                        let chatDiv = document.getElementById('chat');
-                        chatDiv.innerHTML += '<div class="msg-box"><span class="chat-tag">Chat: ' + d.chat_id + '</span><br><b>' + d.usuario + ':</b> ' + textoExibido + ' <small>(' + hora + ')</small></div>';
+                    function enviarMensagem() {
+                        if (!socket) return alert('Conectando...');
+                        
+                        const destinatario = document.getElementById('destinatario').value.trim();
+                        const texto = document.getElementById('mensagem').value.trim();
+                        
+                        if (!destinatario || !texto) return alert('Preencha destinatário e mensagem');
+                        
+                        const textoCriptografado = criptografar(texto);
+                        
+                        socket.emit('envia_mensagem', {
+                            id: "web_" + Date.now() + "_" + Math.floor(Math.random() * 9999),
+                            chat_id: destinatario,
+                            usuario: 'server@server',
+                            texto: textoCriptografado
+                        });
+                        
+                        // Mostrar no chat local
+                        let hora = new Date().toLocaleTimeString('pt-BR');
+                        let chatDiv = document.getElementById('chatArea');
+                        chatDiv.innerHTML += '<div style="margin-bottom: 10px; padding: 8px; border-bottom: 1px solid #eee;"><b>Você (para ' + destinatario + '):</b> ' + texto + ' <small style="color:#999;">(' + hora + ')</small></div>';
                         chatDiv.scrollTop = chatDiv.scrollHeight;
-                    });
+                        document.getElementById('mensagem').value = '';
+                    }
+                    
+                    function sair() {
+                        if (socket) socket.disconnect();
+                        logado = false;
+                        document.getElementById('loginContainer').style.display = 'block';
+                        document.getElementById('chatContainer').style.display = 'none';
+                        document.getElementById('chatArea').innerHTML = '<div style="text-align: center; color: #999;">Conectado como server@server</div>';
+                        document.getElementById('email').value = 'server@server';
+                        document.getElementById('senha').value = '';
+                        document.getElementById('destinatario').value = '';
+                        document.getElementById('mensagem').value = '';
+                    }
                 </script>
             </body>
         </html>
     `);
 });
 
+// ========== ROTA PARA CRIAR CONTA DO SERVER ==========
+app.post('/criar_conta_server', async (req, res) => {
+    const { email, senha } = req.body;
+    
+    const emailLimpo = email.trim().toLowerCase();
+    
+    // Verificar se já existe
+    const usuarioExistente = await usuariosColl.findOne({ email: emailLimpo });
+    if (usuarioExistente) {
+        return res.json({ status: "ok", mensagem: "Conta já existe" });
+    }
+    
+    // Criar conta para server@server
+    const dadosSalvar = {
+        email: emailLimpo,
+        senha: senha,
+        criadoEm: new Date().toISOString(),
+        foto: "",
+        nome_perfil: "Admin Server",
+        chave_cripto: gerarChaveAleatoria()
+    };
+    
+    try {
+        await usuariosColl.insertOne(dadosSalvar);
+        res.json({ status: "ok", mensagem: "Conta server criada com sucesso!" });
+    } catch (erro) {
+        res.status(500).json({ erro: "Erro ao criar conta server" });
+    }
+});
 
 // ========== ATUALIZAR NOME DO PERFIL ==========
 app.post('/atualizar_nome', async (req, res) => {
