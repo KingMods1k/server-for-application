@@ -5,6 +5,7 @@ const io = require('socket.io')(http, {
     cors: { origin: "*", methods: ["GET", "POST"] }
 });
 const path = require('path');
+const crypto = require('crypto');
 
 // DRIVER DO MONGODB
 const { MongoClient, ServerApiVersion } = require('mongodb');
@@ -455,15 +456,30 @@ app.get('/mensagens', (req, res) => {
     res.json(mensagensDoUsuario);
 });
 
-app.post('/enviar', (req, res) => {
-    const { id, chat_id, usuario, texto, destinatario } = req.body;
+function descriptografar(textoBase64, chave) {
+    try {
+        const decipher = crypto.createDecipheriv('aes-256-ecb', Buffer.from(chave), null);
+        let decifrado = decipher.update(textoBase64, 'base64', 'utf8');
+        decifrado += decipher.final('utf8');
+        return decifrado;
+    } catch (e) {
+        return textoBase64;
+    }
+}
+
+app.post('/enviar', async (req, res) => {
+    const { id, chat_id, usuario, texto, destinatario, timestamp } = req.body;
     
     if (!usuario || !texto || !destinatario) {
         return res.status(400).json({ erro: "Campos obrigatórios ausentes." });
     }
+const user = await usuariosColl.findOne({ email: usuario.trim().toLowerCase() });
+    const chave = user ? user.chave_cripto : null;
 
-    const timestamp = Date.now();
-    const idValido = id || (timestamp + "_" + Math.floor(Math.random() * 9999));
+    const textoPuro = chave ? descriptografar(texto, chave) : texto;
+    
+    const timestampFinal = timestamp || Date.now();
+    const idValido = id || (timestampFinal + "_" + Math.floor(Math.random() * 9999));
     
     const listaEmails = [usuario.trim().toLowerCase(), destinatario.trim().toLowerCase()].sort();
     const chatIdValido = "Contato_" + listaEmails[0] + "_" + listaEmails[1];
@@ -473,12 +489,12 @@ app.post('/enviar', (req, res) => {
         chat_id: chatIdValido,
         email_contato: destinatario.trim().toLowerCase(),  
         usuario: usuario.trim().toLowerCase(),
-        texto: texto,
-        timestamp: timestamp
+        texto: textoPuro,  // 🔥 SALVA TEXTO PURO
+        timestamp: timestampFinal
     };
     
     historico.push(novaMsg);
-    io.emit('recebe_mensagem', novaMsg);
+    io.emit('recebe_mensagem', novaMsg);  // 🔥 ENVIA TEXTO PURO
     res.json({ status: "ok" });
 });
 
