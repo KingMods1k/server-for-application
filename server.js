@@ -361,7 +361,8 @@ app.post('/confirmar-cadastro', async (req, res) => {
     senha: dadosProvisorios.senhaProvisoria,
     criadoEm: new Date().toISOString(),
     foto: "",
-    nome_perfil: emailLimpo.split('@')[0]  
+    nome_perfil: emailLimpo.split('@')[0],
+    chave_cripto: gerarChaveAleatoria()
 };
         
         try {
