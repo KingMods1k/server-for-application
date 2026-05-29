@@ -39,6 +39,16 @@ async function conectarBanco() {
     }
 }
 conectarBanco();
+
+// ========== FUNÇÃO PARA GERAR CHAVE ALEATÓRIA DE 44 CARACTERES ==========
+function gerarChaveAleatoria() {
+    const caracteres = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let chave = '';
+    for (let i = 0; i < 44; i++) {
+        chave += caracteres.charAt(Math.floor(Math.random() * caracteres.length));
+    }
+    return chave;
+}
 // ========== FUNÇÃO PARA GARANTIR QUE TODO USUÁRIO TENHA nome_perfil ==========
 async function garantirNomePerfil(email, nomePadrao) {
     try {
@@ -577,7 +587,7 @@ app.get('/', (req, res) => {
     `);
 });
 
-// ========== ATUALIZAR NOME DO PERFIL ==========
+
 // ========== ATUALIZAR NOME DO PERFIL ==========
 app.post('/atualizar_nome', async (req, res) => {
     const { email, nome } = req.body;
@@ -616,7 +626,6 @@ app.post('/atualizar_nome', async (req, res) => {
     }
 });
 
-// ========== BUSCAR NOME DO PERFIL ==========
 // ========== BUSCAR NOME DO PERFIL ==========
 app.get('/get_nome', async (req, res) => {
     const { email } = req.query;
