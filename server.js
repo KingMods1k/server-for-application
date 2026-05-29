@@ -399,6 +399,7 @@ app.post('/login', async (req, res) => {
         await garantirNomePerfil(emailLimpo, nomePadrao);
 
         if (dadosUsuario.senha === senha) {
+const chave = await garantirChaveUsuario(emailLimpo);
             return res.status(200).json({ status: "ok", usuario: emailLimpo });
         } else {
             return res.status(401).json({ erro: "E-mail ou senha incorretos." });
