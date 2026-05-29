@@ -153,7 +153,9 @@ app.post('/upload_foto', async (req, res) => {
         if (resultado.matchedCount === 0) {
             return res.status(404).json({ erro: "Usuário não encontrado para associar a foto." });
         }
-        
+
+        io.emit('foto_atualizada', { email: emailLimpo, foto: fotoBase64 });
+
         res.json({ status: "ok" });
     } catch (erro) {
         res.status(500).json({ erro: "Erro ao salvar foto no banco de dados." });
