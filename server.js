@@ -49,6 +49,24 @@ function gerarChaveAleatoria() {
     }
     return chave;
 }
+
+// ========== FUNÇÃO PARA GARANTIR CHAVE PARA USUÁRIOS EXISTENTES ==========
+async function garantirChaveUsuario(email) {
+    const usuario = await usuariosColl.findOne({ email: email });
+    
+    if (usuario && !usuario.chave_cripto) {
+        const novaChave = gerarChaveAleatoria();
+        await usuariosColl.updateOne(
+            { email: email },
+            { $set: { chave_cripto: novaChave } }
+        );
+        console.log(`✅ Chave criada para usuário existente: ${email}`);
+        return novaChave;
+    }
+    
+    return usuario ? usuario.chave_cripto : null;
+}
+
 // ========== FUNÇÃO PARA GARANTIR QUE TODO USUÁRIO TENHA nome_perfil ==========
 async function garantirNomePerfil(email, nomePadrao) {
     try {
