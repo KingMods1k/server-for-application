@@ -303,32 +303,35 @@ app.post('/confirmar-cadastro', async (req, res) => {
     if (!email || !codigo) return res.status(400).json({ erro: "Dados incompletos para validação." });
     
     const emailLimpo = email.trim().toLowerCase();
+    const codigoLimpo = codigo.trim();
     
-    if (!codigosVerificacao[emailLimpo]) {
-        return res.status(400).json({ erro: "Solicitação não encontrada ou expirada." });
-    }
-    
-    const dadosProvisorios = codigosVerificacao[emailLimpo];
-    
-    if (dadosProvisorios.codigo === codigo.trim()) {
-        const dadosSalvar = {
-            email: emailLimpo,
-            senha: dadosProvisorios.senhaProvisoria,
-            criadoEm: new Date().toISOString(),
-            foto: "",
-            nome_perfil: emailLimpo.split('@')[0],
-            chave_cripto: gerarChaveAleatoria()
-        };
+    try {
+        const registro = await codigosColl.findOne({ email: emailLimpo });
         
-        try {
-            await usuariosColl.insertOne(dadosSalvar);
-            delete codigosVerificacao[emailLimpo];
-            return res.status(200).json({ status: "ok", mensagem: "Cadastro concluído com sucesso!" });
-        } catch (erroBanco) {
-            return res.status(500).json({ erro: "Erro interno ao salvar dados." });
+        if (!registro) {
+            return res.status(400).json({ erro: "Solicitação não encontrada ou expirada." });
         }
-    } else {
-        return res.status(401).json({ erro: "Código incorreto!" });
+        
+        if (registro.codigo === codigoLimpo) {
+            const dadosSalvar = {
+                email: emailLimpo,
+                senha: registro.senhaProvisoria,
+                criadoEm: new Date().toISOString(),
+                foto: "",
+                nome_perfil: emailLimpo.split('@')[0]
+                // ⬅️ chave_cripto REMOVIDA
+            };
+            
+            await usuariosColl.insertOne(dadosSalvar);
+            await codigosColl.deleteOne({ email: emailLimpo });
+            
+            return res.status(200).json({ status: "ok", mensagem: "Cadastro concluído com sucesso!" });
+        } else {
+            return res.status(401).json({ erro: "Código incorreto!" });
+        }
+    } catch (erro) {
+        console.error("Erro ao confirmar cadastro:", erro);
+        return res.status(500).json({ erro: "Erro ao validar código." });
     }
 });
 
