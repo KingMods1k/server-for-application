@@ -24,7 +24,7 @@ const client = new MongoClient(uri, {
   tlsAllowInvalidCertificates: true
 });
 
-let db, usuariosColl, contatosColl;
+let db, usuariosColl, contatosColl, codigosColl;
 
 async function conectarBanco() {
     try {
@@ -32,6 +32,7 @@ async function conectarBanco() {
         db = client.db("meu_aplicativo_chat"); 
         usuariosColl = db.collection("usuarios"); 
         contatosColl = db.collection("contatos"); 
+codigosColl = db.collection("codigos_verificacao");
         console.log("🟢 Conectado com sucesso ao MongoDB Atlas!");
     } catch (erro) {
         console.error("🔴 Erro ao conectar no MongoDB:", erro);
@@ -277,12 +278,23 @@ app.post('/cadastro', async (req, res) => {
         if (usuarioExistente) return res.status(400).json({ erro: "Este e-mail já está cadastrado!" });
         
         const codigo = Math.floor(100000 + Math.random() * 900000).toString();
-        codigosVerificacao[emailLimpo] = { codigo: codigo, senhaProvisoria: senha };
+        
+        // SALVA NO BANCO (em vez da memória)
+        await codigosColl.updateOne(
+            { email: emailLimpo },
+            { $set: { 
+                codigo: codigo, 
+                senhaProvisoria: senha, 
+                criadoEm: new Date() 
+            }},
+            { upsert: true }
+        );
         
         console.log(`📧 [CADASTRO] Email: ${emailLimpo} | Código: ${codigo}`);
         return res.status(200).json({ status: "ok", mensagem: "Código gerado com sucesso!" });
     } catch (erro) {
-        return res.status(500).json({ erro: "Erro ao verificar disponibilidade de e-mail." });
+        console.error("Erro no cadastro:", erro);
+        return res.status(500).json({ erro: "Erro ao processar cadastro." });
     }
 });
 
