@@ -573,6 +573,7 @@ io.on('connection', (socket) => {
 });
 
 // ========== PAINEL WEB ==========
+// ========== PAINEL WEB COM CRIPTOGRAFIA ==========
 app.get('/', (req, res) => {
     res.send(`
         <html>
@@ -588,6 +589,7 @@ app.get('/', (req, res) => {
                     .msg-box { margin-bottom: 10px; padding: 8px; border-bottom: 1px solid #eee; }
                     .chat-tag { background: #e53935; color: white; padding: 2px 6px; border-radius: 3px; font-size: 11px; font-weight: bold; }
                 </style>
+                <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
             </head>
             <body>
                 <div class="container">
@@ -601,20 +603,40 @@ app.get('/', (req, res) => {
                 <script src="/socket.io/socket.io.js"></script>
                 <script>
                     const socket = io();
+                    const CHAVE_SERVER = "S3rv3rK3yF0rW3bP4n3l#2024!Secure";
+                    
+                    function criptografar(texto) {
+                        return CryptoJS.AES.encrypt(texto, CHAVE_SERVER).toString();
+                    }
+                    
+                    function descriptografar(textoCriptografado) {
+                        try {
+                            const bytes = CryptoJS.AES.decrypt(textoCriptografado, CHAVE_SERVER);
+                            return bytes.toString(CryptoJS.enc.Utf8);
+                        } catch(e) {
+                            return textoCriptografado;
+                        }
+                    }
+                    
                     function enviarPelaWeb() {
                         if(!c.value || !u.value || !m.value) return alert("Preencha todos os campos!");
+                        
+                        const textoCriptografado = criptografar(m.value);
+                        
                         socket.emit('envia_mensagem', {
                             id: "web_" + Date.now() + "_" + Math.floor(Math.random() * 999),
                             chat_id: u.value.trim(),
                             usuario: c.value.trim(),
-                            texto: m.value
+                            texto: textoCriptografado
                         });
                         m.value = "";
                     }
+                    
                     socket.on('recebe_mensagem', (d) => {
                         let hora = new Date(d.timestamp).toLocaleTimeString('pt-BR');
+                        let textoExibido = descriptografar(d.texto);
                         let chatDiv = document.getElementById('chat');
-                        chatDiv.innerHTML += '<div class="msg-box"><span class="chat-tag">Chat: ' + d.chat_id + '</span><br><b>' + d.usuario + ':</b> ' + d.texto + ' <small>(' + hora + ')</small></div>';
+                        chatDiv.innerHTML += '<div class="msg-box"><span class="chat-tag">Chat: ' + d.chat_id + '</span><br><b>' + d.usuario + ':</b> ' + textoExibido + ' <small>(' + hora + ')</small></div>';
                         chatDiv.scrollTop = chatDiv.scrollHeight;
                     });
                 </script>
