@@ -368,10 +368,10 @@ app.get('/mensagens', async (req, res) => {
     
     try {
         // 🔥 MUDE ISSO: Buscar no MongoDB, não no historico
-        const mensagensDoUsuario = await mensagensColl.find({ 
-            destinatario: emailFiltro,
-            entregue: false  // Só as não entregues
-        }).sort({ timestamp: 1 }).toArray();
+const mensagensDoUsuario = await mensagensColl.find({ 
+    email_contato: emailFiltro,  // ✅ CORRETO
+    entregue: false
+}).sort({ timestamp: 1 }).toArray();
         
         // Marcar como entregue
         for (const msg of mensagensDoUsuario) {
@@ -403,13 +403,14 @@ app.post('/enviar', async (req, res) => {
     const chatIdValido = "Contato_" + listaEmails[0] + "_" + listaEmails[1];
     
     const novaMsg = { 
-        id: idValido, 
-        chat_id: chatIdValido,
-        email_contato: destinatario.trim().toLowerCase(),
-        usuario: usuario.trim().toLowerCase(),
-        texto: textoPuro,
-        timestamp: timestampFinal
-    };
+    id: idValido, 
+    chat_id: chatIdValido,
+    email_contato: destinatario.trim().toLowerCase(),
+    usuario: usuario.trim().toLowerCase(),
+    texto: textoPuro,
+    timestamp: timestampFinal,
+    entregue: false   // 🔥 SÓ ADICIONA ESTA LINHA
+};
     await mensagensColl.insertOne(novaMsg);
     historico.push(novaMsg);
     io.emit('recebe_mensagem', novaMsg);
