@@ -373,10 +373,6 @@ const mensagensDoUsuario = await mensagensColl.find({
     entregue: false
 }).sort({ timestamp: 1 }).toArray();
         
-        // Marcar como entregue
-        for (const msg of mensagensDoUsuario) {
-            await mensagensColl.updateOne({ id: msg.id }, { $set: { entregue: true } });
-        }
         
         res.json(mensagensDoUsuario);
     } catch (erro) {
@@ -417,39 +413,33 @@ app.post('/enviar', async (req, res) => {
     res.json({ status: "ok" });
 });
 
-app.post('/confirmar_recebimento', (req, res) => {
+app.post('/confirmar_recebimento', async (req, res) => {
     const { email, ids } = req.body;
     const emailFiltro = email.trim().toLowerCase();
     
-    const mensagensRemovidas = [];
-    
-    historico = historico.filter(msg => {
-        if (msg.chat_id && msg.chat_id.toLowerCase().includes(emailFiltro) && ids.includes(msg.id)) {
-            // Guarda a mensagem removida para avisar o remetente
-            mensagensRemovidas.push(msg);
-            return false; // remove
-        }
-        return true;
-    });
-    
-    // 🔥 AVISA O REMETENTE PARA CADA MENSAGEM REMOVIDA
-    for (const msg of mensagensRemovidas) {
-        // Extrai o remetente do chat_id
-        // Exemplo: "Contato_remetente_destinatario"
-        const partes = msg.chat_id.split('_');
-        let remetente = null;
-        
-        if (partes.length >= 3) {
-            // Se o remetente for o primeiro ou segundo
-            if (partes[1] === emailFiltro) {
-                remetente = partes[2];
-            } else {
-                remetente = partes[1];
-            }
+    try {
+        // 🔥 MARCA COMO ENTREGUE NO MONGODB
+        for (const id of ids) {
+            await mensagensColl.updateOne(
+                { id: id, email_contato: emailFiltro }, 
+                { $set: { entregue: true } }
+            );
         }
         
-        if (remetente) {
-            console.log(`📨 Notificando remetente ${remetente} que msg ${msg.id} foi entregue`);
+        // Também remove da RAM (histórico) se existir
+        historico = historico.filter(msg => {
+            return !(ids.includes(msg.id) && msg.email_contato === emailFiltro);
+        });
+        
+        console.log(`✅ Confirmado recebimento: ${ids.length} mensagens para ${emailFiltro}`);
+        res.json({ status: "ok", removidas: ids.length });
+        
+    } catch (erro) {
+        console.error("Erro ao confirmar recebimento:", erro);
+        res.status(500).json({ erro: "Erro ao confirmar recebimento" });
+    }
+});
+    
             io.to(remetente).emit('mensagem_entregue', { 
                 id: msg.id,
                 destinatario: emailFiltro
