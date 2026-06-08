@@ -418,7 +418,6 @@ app.post('/confirmar_recebimento', async (req, res) => {
     const emailFiltro = email.trim().toLowerCase();
     
     try {
-        // 🔥 MARCA COMO ENTREGUE NO MONGODB
         for (const id of ids) {
             await mensagensColl.updateOne(
                 { id: id, email_contato: emailFiltro }, 
@@ -426,7 +425,6 @@ app.post('/confirmar_recebimento', async (req, res) => {
             );
         }
         
-        // Também remove da RAM (histórico) se existir
         historico = historico.filter(msg => {
             return !(ids.includes(msg.id) && msg.email_contato === emailFiltro);
         });
@@ -438,16 +436,6 @@ app.post('/confirmar_recebimento', async (req, res) => {
         console.error("Erro ao confirmar recebimento:", erro);
         res.status(500).json({ erro: "Erro ao confirmar recebimento" });
     }
-});
-    
-            io.to(remetente).emit('mensagem_entregue', { 
-                id: msg.id,
-                destinatario: emailFiltro
-            });
-        }
-    }
-    
-    res.json({ status: "ok", removidas: ids.length });
 });
 
 app.post('/mensagens/deletar', (req, res) => {
