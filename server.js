@@ -419,12 +419,41 @@ app.post('/confirmar_recebimento', (req, res) => {
     const { email, ids } = req.body;
     const emailFiltro = email.trim().toLowerCase();
     
+    const mensagensRemovidas = [];
+    
     historico = historico.filter(msg => {
         if (msg.chat_id && msg.chat_id.toLowerCase().includes(emailFiltro) && ids.includes(msg.id)) {
-            return false;
+            // Guarda a mensagem removida para avisar o remetente
+            mensagensRemovidas.push(msg);
+            return false; // remove
         }
         return true;
     });
+    
+    // 🔥 AVISA O REMETENTE PARA CADA MENSAGEM REMOVIDA
+    for (const msg of mensagensRemovidas) {
+        // Extrai o remetente do chat_id
+        // Exemplo: "Contato_remetente_destinatario"
+        const partes = msg.chat_id.split('_');
+        let remetente = null;
+        
+        if (partes.length >= 3) {
+            // Se o remetente for o primeiro ou segundo
+            if (partes[1] === emailFiltro) {
+                remetente = partes[2];
+            } else {
+                remetente = partes[1];
+            }
+        }
+        
+        if (remetente) {
+            console.log(`📨 Notificando remetente ${remetente} que msg ${msg.id} foi entregue`);
+            io.to(remetente).emit('mensagem_entregue', { 
+                id: msg.id,
+                destinatario: emailFiltro
+            });
+        }
+    }
     
     res.json({ status: "ok", removidas: ids.length });
 });
