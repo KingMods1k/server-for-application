@@ -484,12 +484,10 @@ app.post('/mensagens/deletar', (req, res) => {
     res.json({ status: "ok", mensagens_deletadas: deletadas });
 });
 
-// ========== SOCKET.IO - SEM CRIPTOGRAFIA ==========
 io.on('connection', (socket) => {
-    // 🔥 ADICIONE ESTA PARTE (ESSENCIAL!)
     socket.on('identificar', (email) => {
         socket.join(email);
-        console.log(`✅ ${email} identificado e entrou na sala`);
+        console.log(`✅ ${email} identificado`);
     });
     
     socket.on('envia_mensagem', (dados) => {
@@ -498,39 +496,37 @@ io.on('connection', (socket) => {
         if (!id) id = timestamp + "_" + Math.floor(Math.random() * 9999);
         
         let remetente = usuario ? usuario.trim().toLowerCase() : "admin_web";
+        let destinatario = chat_id ? chat_id.trim().toLowerCase() : "";
         
-        // 🔥 SEM CRIPTOGRAFIA - USA TEXTO DIRETO
         let textoFinal = texto;
         
         let chatIdValido = "";
         if (chat_id && chat_id.startsWith("Contato_")) {
             chatIdValido = chat_id;
         } else if (chat_id) {
-            const listaEmails = [remetente, chat_id.trim().toLowerCase()].sort();
+            const listaEmails = [remetente, destinatario].sort();
             chatIdValido = "Contato_" + listaEmails[0] + "_" + listaEmails[1];
         } else {
             chatIdValido = "Contato_Geral";
         }
         
-        const msgCompleta = { 
+        const novaMsg = { 
             id: id, 
             chat_id: chatIdValido, 
-            email_contato: remetente, 
+            email_contato: destinatario,
             usuario: remetente, 
             texto: textoFinal, 
-            timestamp: timestamp 
+            timestamp: timestamp,
+            entregue: false
         };
         
-        historico.push(msgCompleta);
+        mensagensColl.insertOne(novaMsg);
+        historico.push(novaMsg);
+        io.to(destinatario).emit('recebe_mensagem', novaMsg);
         
-        // 🔥 MUDE DE io.emit PARA io.to (envia só para o destinatário)
-        const destinatario = dados.chat_id; // ou como você identificar o destinatário
-        io.emit('recebe_mensagem', msgCompleta);
-        
-        console.log(`📨 Mensagem enviada para sala: ${destinatario}`);
+        console.log(`📨 Mensagem de ${remetente} para ${destinatario}`);
     });
 });
-
 // ========== PAINEL WEB - SEM CRIPTOGRAFIA ==========
 app.get('/', (req, res) => {
     res.send(`
