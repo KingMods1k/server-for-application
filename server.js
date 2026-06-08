@@ -484,6 +484,12 @@ app.post('/mensagens/deletar', (req, res) => {
 
 // ========== SOCKET.IO - SEM CRIPTOGRAFIA ==========
 io.on('connection', (socket) => {
+    // 🔥 ADICIONE ESTA PARTE (ESSENCIAL!)
+    socket.on('identificar', (email) => {
+        socket.join(email);
+        console.log(`✅ ${email} identificado e entrou na sala`);
+    });
+    
     socket.on('envia_mensagem', (dados) => {
         let { id, chat_id, usuario, texto } = dados;
         const timestamp = Date.now();
@@ -514,7 +520,12 @@ io.on('connection', (socket) => {
         };
         
         historico.push(msgCompleta);
+        
+        // 🔥 MUDE DE io.emit PARA io.to (envia só para o destinatário)
+        const destinatario = dados.chat_id; // ou como você identificar o destinatário
         io.emit('recebe_mensagem', msgCompleta);
+        
+        console.log(`📨 Mensagem enviada para sala: ${destinatario}`);
     });
 });
 
