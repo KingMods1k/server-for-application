@@ -24,7 +24,7 @@ const client = new MongoClient(uri, {
   tlsAllowInvalidCertificates: true
 });
 
-let db, usuariosColl, contatosColl, codigosColl;
+let db, usuariosColl, contatosColl, codigosColl, mensagensColl;
 
 async function conectarBanco() {
     try {
@@ -33,6 +33,7 @@ async function conectarBanco() {
         usuariosColl = db.collection("usuarios"); 
         contatosColl = db.collection("contatos"); 
 codigosColl = db.collection("codigos_verificacao");
+mensagensColl = db.collection("mensagens");
         console.log("🟢 Conectado com sucesso ao MongoDB Atlas!");
     } catch (erro) {
         console.error("🔴 Erro ao conectar no MongoDB:", erro);
@@ -359,28 +360,28 @@ app.post('/login', async (req, res) => {
     }
 });
 
-app.get('/mensagens', (req, res) => {
+app.get('/mensagens', async (req, res) => {
     const { email } = req.query;
     if (!email) return res.status(400).json({ erro: "Email é obrigatório" });
     
-    const mensagensDoUsuario = [];
     const emailFiltro = email.trim().toLowerCase();
     
-    for (const msg of historico) {
-        if (msg.chat_id && msg.chat_id.toLowerCase().includes(emailFiltro)) {
-            mensagensDoUsuario.push({
-                id: msg.id,
-                chat_id: msg.chat_id,
-                email_contato: msg.email_contato,
-                usuario: msg.usuario,
-                texto: msg.texto,
-                timestamp: msg.timestamp
-            });
+    try {
+        // 🔥 MUDE ISSO: Buscar no MongoDB, não no historico
+        const mensagensDoUsuario = await mensagensColl.find({ 
+            destinatario: emailFiltro,
+            entregue: false  // Só as não entregues
+        }).sort({ timestamp: 1 }).toArray();
+        
+        // Marcar como entregue
+        for (const msg of mensagensDoUsuario) {
+            await mensagensColl.updateOne({ id: msg.id }, { $set: { entregue: true } });
         }
+        
+        res.json(mensagensDoUsuario);
+    } catch (erro) {
+        res.status(500).json({ erro: "Erro ao buscar mensagens" });
     }
-    
-    mensagensDoUsuario.sort((a, b) => a.timestamp - b.timestamp);
-    res.json(mensagensDoUsuario);
 });
 
 // 🔥 FUNÇÃO DESCRIPTOGRAFAR REMOVIDA - NÃO USA MAIS CRIPTOGRAFIA
@@ -409,7 +410,7 @@ app.post('/enviar', async (req, res) => {
         texto: textoPuro,
         timestamp: timestampFinal
     };
-    
+    await mensagensColl.insertOne(novaMsg);
     historico.push(novaMsg);
     io.emit('recebe_mensagem', novaMsg);
     res.json({ status: "ok" });
