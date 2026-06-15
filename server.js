@@ -436,28 +436,35 @@ app.post('/confirmar_recebimento', async (req, res) => {
     }
 });
 
-app.post('/mensagens/deletar', (req, res) => {
+app.post('/mensagens/deletar', async (req, res) => {
     const { meuEmail, contatoEmail } = req.query;
     if (!meuEmail || !contatoEmail) {
-        return res.status(400).json({ erro: "Parâmetros meuEmail e contatoEmail são obrigatórios!" });
+        return res.status(400).json({ erro: "Parâmetros obrigatórios!" });
     }
     
     const email1 = meuEmail.trim().toLowerCase();
     const email2 = contatoEmail.trim().toLowerCase();
     
-    const chatVariacaoA = `Contato_${email1}_${email2}`;
-    const chatVariacaoB = `Contato_${email2}_${email1}`;
-    
-    const tamanhoAntes = historico.length;
-    historico = historico.filter(msg => {
-        if (msg.chat_id === chatVariacaoA || msg.chat_id === chatVariacaoB || msg.chat_id === email2) {
-            return false;
-        }
-        return true;
-    });
-    
-    const deletadas = tamanhoAntes - historico.length;
-    res.json({ status: "ok", mensagens_deletadas: deletadas });
+    try {
+        // Deleta todas as mensagens trocadas entre os dois
+        const resultado = await mensagensColl.deleteMany({
+            $or: [
+                { email_contato: email2, usuario: email1 },
+                { email_contato: email1, usuario: email2 }
+            ]
+        });
+        
+        // Também limpa do array em memória (opcional)
+        historico = historico.filter(msg => {
+            return !((msg.email_contato === email2 && msg.usuario === email1) ||
+                     (msg.email_contato === email1 && msg.usuario === email2));
+        });
+        
+        res.json({ status: "ok", deletadas: resultado.deletedCount });
+    } catch (erro) {
+        console.error("Erro ao deletar:", erro);
+        res.status(500).json({ erro: "Erro ao deletar mensagens" });
+    }
 });
 
 io.on('connection', (socket) => {
