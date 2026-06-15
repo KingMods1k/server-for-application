@@ -363,17 +363,15 @@ app.post('/login', async (req, res) => {
 app.get('/mensagens', async (req, res) => {
     const { email } = req.query;
     if (!email) return res.status(400).json({ erro: "Email é obrigatório" });
-    
     const emailFiltro = email.trim().toLowerCase();
-    
     try {
-        // 🔥 MUDE ISSO: Buscar no MongoDB, não no historico
-const mensagensDoUsuario = await mensagensColl.find({ 
-    email_contato: emailFiltro,  // ✅ CORRETO
-    entregue: false
-}).sort({ timestamp: 1 }).toArray();
-        
-        
+        const mensagensDoUsuario = await mensagensColl.find({
+            $or: [
+                { email_contato: emailFiltro },  // mensagens recebidas
+                { usuario: emailFiltro }         // mensagens enviadas por ele
+            ]
+            // ← NÃO filtrar por entregue: false
+        }).sort({ timestamp: 1 }).toArray();
         res.json(mensagensDoUsuario);
     } catch (erro) {
         res.status(500).json({ erro: "Erro ao buscar mensagens" });
