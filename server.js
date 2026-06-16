@@ -411,30 +411,6 @@ app.post('/enviar', async (req, res) => {
     res.json({ status: "ok" });
 });
 
-// Novo listener: confirmação em tempo real via socket
-socket.on('confirmar_recebimento', async (dados) => {
-    try {
-        const { email, ids } = dados;
-        if (!email || !ids || !Array.isArray(ids)) return;
-
-        const emailFiltro = email.trim().toLowerCase();
-
-        for (const id of ids) {
-            const msg = await mensagensColl.findOne({ id: id, email_contato: emailFiltro });
-            if (msg && !msg.entregue) {
-                await mensagensColl.updateOne(
-                    { id: id },
-                    { $set: { entregue: true } }
-                );
-                // Notifica o remetente (msg.usuario)
-                io.to(msg.usuario).emit('mensagem_recebida', { id: id });
-                console.log(`✔ Mensagem ${id} confirmada por ${emailFiltro}`);
-            }
-        }
-    } catch (erro) {
-        console.error("Erro em confirmar_recebimento (socket):", erro);
-    }
-});
 
 app.post('/mensagens/deletar', async (req, res) => {
     const { meuEmail, contatoEmail } = req.query;
@@ -472,7 +448,32 @@ io.on('connection', (socket) => {
         socket.join(email);
         console.log(`✅ ${email} identificado`);
     });
-    
+    // Novo listener: confirmação em tempo real via socket
+socket.on('confirmar_recebimento', async (dados) => {
+    try {
+        const { email, ids } = dados;
+        if (!email || !ids || !Array.isArray(ids)) return;
+
+        const emailFiltro = email.trim().toLowerCase();
+
+        for (const id of ids) {
+            const msg = await mensagensColl.findOne({ id: id, email_contato: emailFiltro });
+            if (msg && !msg.entregue) {
+                await mensagensColl.updateOne(
+                    { id: id },
+                    { $set: { entregue: true } }
+                );
+                // Notifica o remetente (msg.usuario)
+                io.to(msg.usuario).emit('mensagem_recebida', { id: id });
+                console.log(`✔ Mensagem ${id} confirmada por ${emailFiltro}`);
+            }
+        }
+    } catch (erro) {
+        console.error("Erro em confirmar_recebimento (socket):", erro);
+    }
+});
+
+
     socket.on('envia_mensagem', (dados) => {
         let { id, chat_id, usuario, texto } = dados;
         const timestamp = Date.now();
