@@ -411,28 +411,28 @@ app.post('/enviar', async (req, res) => {
     res.json({ status: "ok" });
 });
 
-app.post('/confirmar_recebimento', async (req, res) => {
-    const { email, ids } = req.body;
-    const emailFiltro = email.trim().toLowerCase();
-    
+// Novo listener: confirmação em tempo real via socket
+socket.on('confirmar_recebimento', async (dados) => {
     try {
+        const { email, ids } = dados;
+        if (!email || !ids || !Array.isArray(ids)) return;
+
+        const emailFiltro = email.trim().toLowerCase();
+
         for (const id of ids) {
-            await mensagensColl.updateOne(
-                { id: id, email_contato: emailFiltro }, 
-                { $set: { entregue: true } }
-            );
+            const msg = await mensagensColl.findOne({ id: id, email_contato: emailFiltro });
+            if (msg && !msg.entregue) {
+                await mensagensColl.updateOne(
+                    { id: id },
+                    { $set: { entregue: true } }
+                );
+                // Notifica o remetente (msg.usuario)
+                io.to(msg.usuario).emit('mensagem_recebida', { id: id });
+                console.log(`✔ Mensagem ${id} confirmada por ${emailFiltro}`);
+            }
         }
-        
-        historico = historico.filter(msg => {
-            return !(ids.includes(msg.id) && msg.email_contato === emailFiltro);
-        });
-        
-        console.log(`✅ Confirmado recebimento: ${ids.length} mensagens para ${emailFiltro}`);
-        res.json({ status: "ok", removidas: ids.length });
-        
     } catch (erro) {
-        console.error("Erro ao confirmar recebimento:", erro);
-        res.status(500).json({ erro: "Erro ao confirmar recebimento" });
+        console.error("Erro em confirmar_recebimento (socket):", erro);
     }
 });
 
