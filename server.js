@@ -98,6 +98,40 @@ function descriptografarXOR(dadosBase64) {
         return null;
     }
 }
+// ========== ROTA HTTP PARA CONFIRMAR RECEBIMENTO (IGUAL AO SOCKET) ==========
+app.post('/confirmar_recebimento', async (req, res) => {
+    try {
+        const { email, ids } = req.body;
+        if (!email || !ids || !Array.isArray(ids)) {
+            return res.status(400).json({ erro: "Dados inválidos" });
+        }
+
+        const emailFiltro = email.trim().toLowerCase();
+
+        for (const id of ids) {
+            const msg = await mensagensColl.findOne({ 
+                id: id, 
+                email_contato: emailFiltro 
+            });
+            
+            if (msg && !msg.entregue) {
+                await mensagensColl.updateOne(
+                    { id: id },
+                    { $set: { entregue: true } }
+                );
+                
+                // 🔥 NOTIFICA O REMETENTE IGUAL AO SOCKET
+                io.to(msg.usuario).emit('mensagem_recebida', { id: id });
+                console.log(`✔ Mensagem ${id} confirmada por ${emailFiltro} (HTTP)`);
+            }
+        }
+        
+        res.json({ status: "ok" });
+    } catch (erro) {
+        console.error("Erro em confirmar_recebimento (HTTP):", erro);
+        res.status(500).json({ erro: "Erro ao confirmar" });
+    }
+});
 
 app.get('/get_fotos_lote', async (req, res) => {
     const { emails } = req.query;
