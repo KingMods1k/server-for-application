@@ -11,8 +11,7 @@ const { MongoClient, ServerApiVersion } = require('mongodb');
 
 app.use(express.json({ limit: '50mb' }));
 
-// ========== CONFIGURAÇÕES DO BANCO DE DADOS ==========
-const uri = "mongodb+srv://server:adm27019213btu@btuapplication.wii3blb.mongodb.net/?appName=btuapplication";
+const uri = process.env.MONGO_URI;
 
 const client = new MongoClient(uri, {
   serverApi: {
