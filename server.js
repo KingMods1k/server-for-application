@@ -393,8 +393,8 @@ app.post('/login', async (req, res) => {
     }
 });
 
-app.get('/mensagens', async (req, res) => {
-    const { email, senha } = req.query;
+app.post('/mensagens', async (req, res) => {
+    const { email, senha } = req.body;
     if (!email || !senha) return res.status(400).json({ erro: "Não autorizado" });
     
     const emailLimpo = email.trim().toLowerCase();
