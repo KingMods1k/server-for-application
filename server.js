@@ -394,8 +394,12 @@ app.post('/login', async (req, res) => {
 });
 
 app.get('/mensagens', async (req, res) => {
-    const { email } = req.query;
-    if (!email) return res.status(400).json({ erro: "Email é obrigatório" });
+    const { email, senha } = req.query;
+    if (!email || !senha) return res.status(400).json({ erro: "Não autorizado" });
+    
+    const emailLimpo = email.trim().toLowerCase();
+    const usuario = await usuariosColl.findOne({ email: emailLimpo });
+    if (!usuario || usuario.senha !== senha) return res.status(401).json({ erro: "Não autorizado" });
     const emailFiltro = email.trim().toLowerCase();
     try {
         const mensagensDoUsuario = await mensagensColl.find({
