@@ -233,17 +233,26 @@ app.post('/mensagens/apagar_especifica', async (req, res) => {
             return res.status(401).json({ erro: "Não autorizado" });
         }
 
+        // ✅ SÓ QUEM ENVIOU PODE APAGAR!
         const resultado = await mensagensColl.deleteMany({
             id: { $in: ids },
-            $or: [
-                { email_contato: emailLimpo },
-                { usuario: emailLimpo }
-            ]
+            usuario: emailLimpo  // ← SÓ O REMETENTE!
         });
 
-        res.json({ status: "ok", apagadas: resultado.deletedCount });
+        // 🔥 Se não apagou nenhuma, avisa
+        if (resultado.deletedCount === 0) {
+            return res.status(404).json({ 
+                erro: "Mensagem não encontrada ou você não é o remetente" 
+            });
+        }
+
+        res.json({ 
+            status: "ok", 
+            apagadas: resultado.deletedCount 
+        });
 
     } catch (erro) {
+        console.error('Erro ao apagar mensagem:', erro);
         res.status(500).json({ erro: "Erro interno" });
     }
 });
