@@ -79,7 +79,7 @@ async function garantirNomePerfil(email, nomePadrao) {
     }
 }
 
-const CHAVE_SECRETA = "MeApp-2026-05-19-NZ-8y$y$y$y$&-8d)(?!?!{'json','MeAppSHA-256'}'/";
+const CHAVE_SECRETA = process.env.CHAVE_XOR;
 
 let historico = [];
 let codigosVerificacao = {};
