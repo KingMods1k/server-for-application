@@ -217,6 +217,44 @@ app.get('/usuario', async (req, res) => {
     }
 });
 
+
+// ========== NOVA ROTA PARA APAGAR MENSAGENS ESPECÍFICAS ==========
+app.post('/mensagens/apagar_especifica', async (req, res) => {
+    try {
+        const { email, senha, ids } = req.body;
+
+        // 1. Verificação de segurança (E-mail e Senha)
+        if (!email || !senha || !ids || !Array.isArray(ids)) {
+            return res.status(400).json({ erro: "Dados incompletos" });
+        }
+
+        const emailLimpo = email.trim().toLowerCase();
+        const usuario = await usuariosColl.findOne({ email: emailLimpo });
+
+        if (!usuario || usuario.senha !== senha) {
+            return res.status(401).json({ erro: "Não autorizado" });
+        }
+
+        // 2. Apaga as mensagens do banco de dados
+        // Só apaga se o ID estiver na lista e se a mensagem pertencer ao usuário
+        const resultado = await mensagensColl.deleteMany({
+            id: { $in: ids },
+            $or: [
+                { email_contato: emailLimpo },
+                { usuario: emailLimpo }
+            ]
+        });
+
+        console.log(`🗑️ ${resultado.deletedCount} mensagens limpas da nuvem por ${emailLimpo}`);
+        res.json({ status: "ok", apagadas: resultado.deletedCount });
+
+    } catch (erro) {
+        console.error("Erro ao apagar mensagens:", erro);
+        res.status(500).json({ erro: "Erro interno" });
+    }
+});
+
+
 app.post('/salvar_contatos', async (req, res) => {
     const { email, contatos } = req.body;
     if (!email || !contatos) return res.status(400).json({ erro: "Dados incompletos" });
