@@ -134,36 +134,37 @@ app.post('/confirmar_recebimento', async (req, res) => {
 
 // ========== ROTAS DE FOTOS EM LOTE AJUSTADA PARA POST ==========
 app.post('/get_fotos_lote', async (req, res) => {
-    // Agora lê do corpo (req.body) enviado pelo Android
     const { emails } = req.body; 
+    
+    console.log("📥 Emails recebidos:", emails); // ← VER O QUE CHEGA
     
     if (!emails) {
         return res.status(400).json({ erro: "Lista de emails é obrigatória" });
     }
     
     try {
-        // Garante que os dados sejam tratados como Array, mesmo vindo em formatos variados
         const listaEmails = Array.isArray(emails) ? emails : JSON.parse(emails);
         
-        if (!Array.isArray(listaEmails) || listaEmails.length === 0) {
-            return res.status(400).json({ erro: "Lista de emails inválida" });
-        }
+        console.log("📋 Lista processada:", listaEmails); // ← VER A LISTA
         
-        // Busca no MongoDB apenas os e-mails solicitados (limpos)
         const usuarios = await usuariosColl.find(
             { email: { $in: listaEmails.map(e => e.trim().toLowerCase()) } },
             { projection: { email: 1, foto: 1 } }
         ).toArray();
         
+        console.log("👥 Usuários encontrados:", usuarios.map(u => ({ email: u.email, temFoto: !!u.foto, tamanho: u.foto?.length }))); // ← VER O QUE O BANCO RETORNA
+        
         const resultado = {};
         usuarios.forEach(usuario => {
-    resultado[usuario.email] = (usuario.foto && usuario.foto.length > 10) ? usuario.foto : null;
-});
-        // Garante que todo e-mail solicitado tenha uma resposta (mesmo que nula)
+            resultado[usuario.email] = (usuario.foto && usuario.foto.length > 10) ? usuario.foto : null;
+        });
+
         listaEmails.forEach(email => {
             const emailLimpo = email.trim().toLowerCase();
             if (!(emailLimpo in resultado)) resultado[emailLimpo] = null;
         });
+        
+        console.log("📤 Resultado enviado:", Object.keys(resultado).map(k => ({ email: k, temFoto: resultado[k] !== null }))); // ← VER O QUE É ENVIADO
         
         res.json(resultado);
     } catch (erro) {
