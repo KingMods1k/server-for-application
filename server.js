@@ -157,13 +157,12 @@ app.post('/get_fotos_lote', async (req, res) => {
         
         const resultado = {};
         usuarios.forEach(usuario => {
-            resultado[usuario.email] = usuario.foto || null;
-        });
-        
+    resultado[usuario.email] = (usuario.foto && usuario.foto.length > 10) ? usuario.foto : null;
+});
         // Garante que todo e-mail solicitado tenha uma resposta (mesmo que nula)
         listaEmails.forEach(email => {
             const emailLimpo = email.trim().toLowerCase();
-            if (!resultado[emailLimpo]) resultado[emailLimpo] = null;
+            if (!(emailLimpo in resultado)) resultado[emailLimpo] = null;
         });
         
         res.json(resultado);
