@@ -132,16 +132,24 @@ app.post('/confirmar_recebimento', async (req, res) => {
     }
 });
 
-app.get('/get_fotos_lote', async (req, res) => {
-    const { emails } = req.query;
-    if (!emails) return res.status(400).json({ erro: "Lista de emails é obrigatória" });
+// ========== ROTAS DE FOTOS EM LOTE AJUSTADA PARA POST ==========
+app.post('/get_fotos_lote', async (req, res) => {
+    // Agora lê do corpo (req.body) enviado pelo Android
+    const { emails } = req.body; 
+    
+    if (!emails) {
+        return res.status(400).json({ erro: "Lista de emails é obrigatória" });
+    }
     
     try {
-        const listaEmails = JSON.parse(emails);
+        // Garante que os dados sejam tratados como Array, mesmo vindo em formatos variados
+        const listaEmails = Array.isArray(emails) ? emails : JSON.parse(emails);
+        
         if (!Array.isArray(listaEmails) || listaEmails.length === 0) {
             return res.status(400).json({ erro: "Lista de emails inválida" });
         }
         
+        // Busca no MongoDB apenas os e-mails solicitados (limpos)
         const usuarios = await usuariosColl.find(
             { email: { $in: listaEmails.map(e => e.trim().toLowerCase()) } },
             { projection: { email: 1, foto: 1 } }
@@ -152,6 +160,7 @@ app.get('/get_fotos_lote', async (req, res) => {
             resultado[usuario.email] = usuario.foto || null;
         });
         
+        // Garante que todo e-mail solicitado tenha uma resposta (mesmo que nula)
         listaEmails.forEach(email => {
             const emailLimpo = email.trim().toLowerCase();
             if (!resultado[emailLimpo]) resultado[emailLimpo] = null;
@@ -162,6 +171,8 @@ app.get('/get_fotos_lote', async (req, res) => {
         console.error("Erro ao buscar fotos em lote:", erro);
         res.status(500).json({ erro: "Erro ao buscar fotos" });
     }
+});
+
 });
 
 app.post('/upload_foto', async (req, res) => {
