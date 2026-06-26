@@ -173,8 +173,6 @@ app.post('/get_fotos_lote', async (req, res) => {
     }
 });
 
-});
-
 app.post('/upload_foto', async (req, res) => {
     const { email, foto } = req.body;
     if (!email || !foto) return res.status(400).json({ erro: "Dados incompletos" });
