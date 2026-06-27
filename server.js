@@ -136,7 +136,7 @@ app.post('/confirmar_recebimento', async (req, res) => {
 app.post('/get_fotos_lote', async (req, res) => {
     const { emails } = req.body; 
     
-    console.log("📥 Emails recebidos:", emails); // ← VER O QUE CHEGA
+    console.log("📥 Emails recebidos:", emails);
     
     if (!emails) {
         return res.status(400).json({ erro: "Lista de emails é obrigatória" });
@@ -144,27 +144,47 @@ app.post('/get_fotos_lote', async (req, res) => {
     
     try {
         const listaEmails = Array.isArray(emails) ? emails : JSON.parse(emails);
+        console.log("📋 Lista processada:", listaEmails);
         
-        console.log("📋 Lista processada:", listaEmails); // ← VER A LISTA
-        
+        // 🔥 BUSCA COMPLETA (SEM PROJEÇÃO) PARA VER TUDO
         const usuarios = await usuariosColl.find(
-            { email: { $in: listaEmails.map(e => e.trim().toLowerCase()) } },
-            { projection: { email: 1, foto: 1 } }
+            { email: { $in: listaEmails.map(e => e.trim().toLowerCase()) } }
         ).toArray();
         
-        console.log("👥 Usuários encontrados:", usuarios.map(u => ({ email: u.email, temFoto: !!u.foto, tamanho: u.foto?.length }))); // ← VER O QUE O BANCO RETORNA
+        console.log("👥 Usuários COMPLETOS encontrados:", JSON.stringify(usuarios, null, 2));
+        
+        // 🔥 VERIFICA CADA CAMPO
+        usuarios.forEach(u => {
+            console.log(`📧 ${u.email}:`);
+            console.log(`   - Tem foto? ${!!u.foto}`);
+            console.log(`   - Tamanho da foto: ${u.foto?.length || 0}`);
+            console.log(`   - Primeiros 50 caracteres: ${u.foto?.substring(0, 50) || 'null'}`);
+        });
         
         const resultado = {};
         usuarios.forEach(usuario => {
-            resultado[usuario.email] = (usuario.foto && usuario.foto.length > 10) ? usuario.foto : null;
+            if (usuario.foto && usuario.foto.length > 10) {
+                resultado[usuario.email] = usuario.foto;
+                console.log(`✅ ${usuario.email} tem foto!`);
+            } else {
+                resultado[usuario.email] = null;
+                console.log(`❌ ${usuario.email} NÃO tem foto`);
+            }
         });
 
         listaEmails.forEach(email => {
             const emailLimpo = email.trim().toLowerCase();
-            if (!(emailLimpo in resultado)) resultado[emailLimpo] = null;
+            if (!(emailLimpo in resultado)) {
+                resultado[emailLimpo] = null;
+                console.log(`⚠️ ${emailLimpo} não encontrado no banco`);
+            }
         });
         
-        console.log("📤 Resultado enviado:", Object.keys(resultado).map(k => ({ email: k, temFoto: resultado[k] !== null }))); // ← VER O QUE É ENVIADO
+        console.log("📤 Resultado enviado:", Object.keys(resultado).map(k => ({ 
+            email: k, 
+            temFoto: resultado[k] !== null,
+            tamanho: resultado[k]?.length || 0
+        })));
         
         res.json(resultado);
     } catch (erro) {
