@@ -197,28 +197,22 @@ app.post('/upload_foto', async (req, res) => {
     const { email, foto } = req.body;
     if (!email || !foto) return res.status(400).json({ erro: "Dados incompletos" });
     
-    const fotoLimpa = foto.replace(/[\s\n\r]/g, '');
-    const fotoBuffer = descriptografarXOR(fotoLimpa);
-    if (!fotoBuffer) return res.status(400).json({ erro: "Falha na descriptografia" });
-    
     const emailLimpo = email.trim().toLowerCase();
+    const fotoLimpa = foto.replace(/[\s\n\r]/g, '');
     
-    try {
-        const fotoBase64 = fotoBuffer.toString('base64');
-        const resultado = await usuariosColl.updateOne(
-            { email: emailLimpo },
-            { $set: { foto: fotoBase64 } }
-        );
-        
-        if (resultado.matchedCount === 0) {
-            return res.status(404).json({ erro: "Usuário não encontrado" });
-        }
-        
-        io.emit('foto_atualizada', { email: emailLimpo, foto: fotoBase64 });
-        res.json({ status: "ok" });
-    } catch (erro) {
-        res.status(500).json({ erro: "Erro ao salvar foto" });
+    // 🔥 NÃO DESCRIPTOGRAFA! NÃO CONVERTE DE NOVO!
+    // A foto JÁ VEM EM BASE64 do app
+    const resultado = await usuariosColl.updateOne(
+        { email: emailLimpo },
+        { $set: { foto: fotoLimpa } }  // ← SALVA DIRETO
+    );
+    
+    if (resultado.matchedCount === 0) {
+        return res.status(404).json({ erro: "Usuário não encontrado" });
     }
+    
+    io.emit('foto_atualizada', { email: emailLimpo, foto: fotoLimpa });
+    res.json({ status: "ok" });
 });
 
 app.get('/usuario', async (req, res) => {
