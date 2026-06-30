@@ -1045,7 +1045,7 @@ app.get('/metrics', (req, res) => {
     const uptimeSeconds = process.uptime();
     const hours = Math.floor(uptimeSeconds / 3600);
     const minutes = Math.floor((uptimeSeconds % 3600) / 60);
-    const uptimeStr = hours > 0 ? \`\${hours}h \${minutes}m\` : \`\${minutes}m\`;
+    const uptimeStr = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
     
     res.json({
         cpu: cpuUsage.toFixed(1),
