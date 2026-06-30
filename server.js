@@ -615,6 +615,7 @@ socket.on('confirmar_recebimento', async (dados) => {
 // ========== PAINEL DE MONITORAMENTO ==========
 app.get('/', (req, res) => {
     res.send(`
+        <!DOCTYPE html>
         <html>
             <head>
                 <meta charset="utf-8">
@@ -798,7 +799,6 @@ app.get('/', (req, res) => {
             </head>
             <body>
                 <div class="container">
-                    <!-- Header -->
                     <h1>
                         🖥️ MeApp Monitor
                         <span class="status-badge">
@@ -807,7 +807,6 @@ app.get('/', (req, res) => {
                         </span>
                     </h1>
                     
-                    <!-- Cards -->
                     <div class="grid">
                         <div class="card">
                             <div class="card-title">💻 CPU Usage</div>
@@ -827,7 +826,6 @@ app.get('/', (req, res) => {
                         </div>
                     </div>
                     
-                    <!-- Rotas -->
                     <div class="section">
                         <div class="section-title">🔗 Rotas Disponíveis</div>
                         <div id="routes">
@@ -916,10 +914,19 @@ app.get('/', (req, res) => {
                                 <span class="route-path">/mensagens/apagar_especifica</span>
                                 <span class="route-status">✓ Chat</span>
                             </div>
+                            <div class="route-item">
+                                <span class="route-method">GET</span>
+                                <span class="route-path">/metrics</span>
+                                <span class="route-status">✓ Monitor</span>
+                            </div>
+                            <div class="route-item">
+                                <span class="route-method">GET</span>
+                                <span class="route-path">/download_server</span>
+                                <span class="route-status">✓ Monitor</span>
+                            </div>
                         </div>
                     </div>
                     
-                    <!-- Download -->
                     <div class="section" style="text-align: center;">
                         <div class="section-title" style="justify-content: center;">📥 Download do Server</div>
                         <button class="btn-download" onclick="downloadServer()">
@@ -930,7 +937,6 @@ app.get('/', (req, res) => {
                         </p>
                     </div>
                     
-                    <!-- Logs -->
                     <div class="section">
                         <div class="section-title">📋 Logs em Tempo Real</div>
                         <div class="log-container" id="logs">
@@ -946,10 +952,9 @@ app.get('/', (req, res) => {
                     </div>
                 </div>
                 
+                <script src="/socket.io/socket.io.js"></script>
                 <script>
-                    // Função para baixar o server.js
                     function downloadServer() {
-                        // Pega o código atual do server
                         fetch('/download_server')
                             .then(response => response.text())
                             .then(code => {
@@ -968,7 +973,6 @@ app.get('/', (req, res) => {
                             });
                     }
                     
-                    // Atualiza métricas
                     async function atualizarMetricas() {
                         try {
                             const response = await fetch('/metrics');
@@ -979,7 +983,6 @@ app.get('/', (req, res) => {
                             document.getElementById('latency').textContent = data.latency + ' ms';
                             document.getElementById('uptime').textContent = data.uptime;
                             
-                            // Cores baseadas nos valores
                             const cpu = parseFloat(data.cpu);
                             const cpuEl = document.getElementById('cpu');
                             cpuEl.className = 'card-value';
@@ -1006,26 +1009,22 @@ app.get('/', (req, res) => {
                         }
                     }
                     
-                    // Adiciona log via WebSocket
-                    let socket = io();
-                    socket.on('log_update', (log) => {
+                    // Socket.io para logs
+                    const socket = io();
+                    socket.on('log_update', function(log) {
                         const logContainer = document.getElementById('logs');
                         const logLine = document.createElement('div');
                         logLine.className = 'log-line';
-                        logLine.innerHTML = \`
-                            <span class="time">[\${new Date().toLocaleTimeString()}]</span>
-                            <span class="level-\${log.level}">\${log.message}</span>
-                        \`;
+                        const time = new Date().toLocaleTimeString();
+                        logLine.innerHTML = '<span class="time">[' + time + ']</span><span class="level-' + log.level + '">' + log.message + '</span>';
                         logContainer.appendChild(logLine);
                         logContainer.scrollTop = logContainer.scrollHeight;
                     });
                     
-                    // Atualiza a cada 2 segundos
+                    // Inicia atualizações
                     atualizarMetricas();
                     setInterval(atualizarMetricas, 2000);
                 </script>
-                
-                <script src="/socket.io/socket.io.js"></script>
             </body>
         </html>
     `);
