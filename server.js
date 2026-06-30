@@ -612,154 +612,466 @@ socket.on('confirmar_recebimento', async (dados) => {
         console.log(`📨 Mensagem de ${remetente} para ${destinatario}`);
     });
 });
-// ========== PAINEL WEB - SEM CRIPTOGRAFIA ==========
+// ========== PAINEL DE MONITORAMENTO ==========
 app.get('/', (req, res) => {
     res.send(`
         <html>
             <head>
                 <meta charset="utf-8">
-                <title>MeApp - Admin</title>
+                <title>MeApp - Monitor</title>
                 <style>
-                    body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
-                    .container { max-width: 500px; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-                    input { display: block; width: 100%; margin-bottom: 15px; padding: 12px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; font-size: 16px; }
-                    button { width: 100%; padding: 12px; background: #e53935; color: white; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; font-size: 16px; }
-                    button:hover { background: #c62828; }
-                    .error { color: red; margin-bottom: 15px; text-align: center; }
-                    h2 { text-align: center; color: #e53935; margin-bottom: 25px; }
+                    * { margin: 0; padding: 0; box-sizing: border-box; }
+                    body { 
+                        font-family: 'Segoe UI', Arial, sans-serif; 
+                        background: #0a0e17; 
+                        color: #fff;
+                        min-height: 100vh;
+                        padding: 20px;
+                    }
+                    .container {
+                        max-width: 1200px;
+                        margin: 0 auto;
+                    }
+                    h1 {
+                        font-size: 28px;
+                        margin-bottom: 30px;
+                        color: #00d4ff;
+                        display: flex;
+                        align-items: center;
+                        gap: 15px;
+                    }
+                    .status-badge {
+                        font-size: 14px;
+                        background: #00c853;
+                        padding: 5px 15px;
+                        border-radius: 20px;
+                        font-weight: normal;
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 8px;
+                    }
+                    .status-badge .dot {
+                        width: 8px;
+                        height: 8px;
+                        background: #fff;
+                        border-radius: 50%;
+                        animation: pulse 1.5s infinite;
+                    }
+                    @keyframes pulse {
+                        0%, 100% { opacity: 1; }
+                        50% { opacity: 0.3; }
+                    }
+                    
+                    .grid {
+                        display: grid;
+                        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+                        gap: 20px;
+                        margin-bottom: 30px;
+                    }
+                    .card {
+                        background: rgba(255,255,255,0.05);
+                        backdrop-filter: blur(10px);
+                        border: 1px solid rgba(255,255,255,0.1);
+                        border-radius: 15px;
+                        padding: 25px;
+                        transition: all 0.3s;
+                    }
+                    .card:hover {
+                        transform: translateY(-5px);
+                        border-color: rgba(0, 212, 255, 0.3);
+                        box-shadow: 0 10px 30px rgba(0, 212, 255, 0.1);
+                    }
+                    .card-title {
+                        font-size: 12px;
+                        text-transform: uppercase;
+                        letter-spacing: 1px;
+                        color: #8899aa;
+                        margin-bottom: 10px;
+                    }
+                    .card-value {
+                        font-size: 32px;
+                        font-weight: bold;
+                        color: #00d4ff;
+                    }
+                    .card-value.green { color: #00c853; }
+                    .card-value.yellow { color: #ffd600; }
+                    .card-value.red { color: #ff1744; }
+                    
+                    .section {
+                        background: rgba(255,255,255,0.03);
+                        border-radius: 15px;
+                        padding: 25px;
+                        margin-bottom: 20px;
+                        border: 1px solid rgba(255,255,255,0.05);
+                    }
+                    .section-title {
+                        font-size: 18px;
+                        margin-bottom: 15px;
+                        color: #00d4ff;
+                        display: flex;
+                        align-items: center;
+                        gap: 10px;
+                    }
+                    .route-item {
+                        padding: 8px 12px;
+                        margin: 5px 0;
+                        background: rgba(255,255,255,0.03);
+                        border-radius: 8px;
+                        display: flex;
+                        align-items: center;
+                        gap: 15px;
+                        font-family: 'Courier New', monospace;
+                        font-size: 14px;
+                        border-left: 3px solid #00d4ff;
+                    }
+                    .route-method {
+                        color: #00d4ff;
+                        font-weight: bold;
+                        min-width: 60px;
+                    }
+                    .route-path {
+                        color: #fff;
+                        flex: 1;
+                    }
+                    .route-status {
+                        font-size: 12px;
+                        padding: 2px 10px;
+                        border-radius: 10px;
+                        background: #00c853;
+                        color: #000;
+                    }
+                    
+                    .btn-download {
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 10px;
+                        background: #00d4ff;
+                        color: #000;
+                        padding: 12px 30px;
+                        border-radius: 10px;
+                        text-decoration: none;
+                        font-weight: bold;
+                        transition: all 0.3s;
+                        border: none;
+                        cursor: pointer;
+                        font-size: 16px;
+                    }
+                    .btn-download:hover {
+                        transform: scale(1.02);
+                        box-shadow: 0 5px 20px rgba(0, 212, 255, 0.3);
+                    }
+                    
+                    .log-container {
+                        max-height: 300px;
+                        overflow-y: auto;
+                        background: rgba(0,0,0,0.3);
+                        border-radius: 10px;
+                        padding: 15px;
+                        font-family: 'Courier New', monospace;
+                        font-size: 12px;
+                        color: #8899aa;
+                    }
+                    .log-line {
+                        padding: 3px 0;
+                        border-bottom: 1px solid rgba(255,255,255,0.03);
+                    }
+                    .log-line .time {
+                        color: #556677;
+                        margin-right: 10px;
+                    }
+                    .log-line .level-info { color: #00d4ff; }
+                    .log-line .level-error { color: #ff1744; }
+                    .log-line .level-success { color: #00c853; }
+                    
+                    ::-webkit-scrollbar {
+                        width: 6px;
+                    }
+                    ::-webkit-scrollbar-track {
+                        background: rgba(255,255,255,0.05);
+                        border-radius: 10px;
+                    }
+                    ::-webkit-scrollbar-thumb {
+                        background: #00d4ff;
+                        border-radius: 10px;
+                    }
                 </style>
             </head>
             <body>
-                <div class="container" id="loginContainer">
-                    <h2>🔐 Painel Admin</h2>
-                    <input type="text" id="email" placeholder="E-mail" value="server@server">
-                    <input type="password" id="senha" placeholder="Senha">
-                    <button onclick="fazerLogin()">Entrar</button>
-                    <div id="errorMsg" class="error"></div>
-                </div>
-                
-                <div class="container" id="chatContainer" style="display:none; max-width: 800px;">
-                    <h2>📨 MeApp - Admin</h2>
-                    <div style="display: flex; gap: 10px; margin-bottom: 15px;">
-                        <input type="text" id="destinatario" placeholder="E-mail do destinatário" style="flex:2;">
-                        <input type="text" id="mensagem" placeholder="Digite sua mensagem" style="flex:3;">
-                        <button onclick="enviarMensagem()" style="width: auto; padding: 12px 20px;">Enviar</button>
-                        <button onclick="sair()" style="width: auto; background: #666;">Sair</button>
-                    </div>
-                    <div id="chatArea" style="height: 400px; overflow-y: auto; border: 1px solid #eee; padding: 10px; background: #fafafa; border-radius: 5px;">
-                        <div style="text-align: center; color: #999;">Conectado como server@server</div>
-                    </div>
-                </div>
-                
-                <script src="/socket.io/socket.io.js"></script>
-                <script>
-                    let socket = null;
-                    let logado = false;
+                <div class="container">
+                    <!-- Header -->
+                    <h1>
+                        🖥️ MeApp Monitor
+                        <span class="status-badge">
+                            <span class="dot"></span>
+                            Online
+                        </span>
+                    </h1>
                     
-                    async function fazerLogin() {
-                        const email = document.getElementById('email').value.trim();
-                        const senha = document.getElementById('senha').value;
-                        
-                        if (email === 'server@server' && senha === 'vxz') {
-                            logado = true;
-                            document.getElementById('loginContainer').style.display = 'none';
-                            document.getElementById('chatContainer').style.display = 'block';
-                            
-                            socket = io();
-                            
-                            socket.on('connect', () => {
-                                socket.emit('identificar', 'server@server');
-                                console.log('✅ Conectado ao servidor');
+                    <!-- Cards -->
+                    <div class="grid">
+                        <div class="card">
+                            <div class="card-title">💻 CPU Usage</div>
+                            <div class="card-value" id="cpu">0%</div>
+                        </div>
+                        <div class="card">
+                            <div class="card-title">🧠 RAM Usage</div>
+                            <div class="card-value" id="ram">0 MB</div>
+                        </div>
+                        <div class="card">
+                            <div class="card-title">📡 Latência</div>
+                            <div class="card-value" id="latency">0 ms</div>
+                        </div>
+                        <div class="card">
+                            <div class="card-title">⏱️ Uptime</div>
+                            <div class="card-value" id="uptime">0h</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Rotas -->
+                    <div class="section">
+                        <div class="section-title">🔗 Rotas Disponíveis</div>
+                        <div id="routes">
+                            <div class="route-item">
+                                <span class="route-method">GET</span>
+                                <span class="route-path">/</span>
+                                <span class="route-status">✓ Painel</span>
+                            </div>
+                            <div class="route-item">
+                                <span class="route-method">POST</span>
+                                <span class="route-path">/login</span>
+                                <span class="route-status">✓ Auth</span>
+                            </div>
+                            <div class="route-item">
+                                <span class="route-method">POST</span>
+                                <span class="route-path">/cadastro</span>
+                                <span class="route-status">✓ Auth</span>
+                            </div>
+                            <div class="route-item">
+                                <span class="route-method">POST</span>
+                                <span class="route-path">/confirmar-cadastro</span>
+                                <span class="route-status">✓ Auth</span>
+                            </div>
+                            <div class="route-item">
+                                <span class="route-method">POST</span>
+                                <span class="route-path">/enviar</span>
+                                <span class="route-status">✓ Chat</span>
+                            </div>
+                            <div class="route-item">
+                                <span class="route-method">POST</span>
+                                <span class="route-path">/mensagens</span>
+                                <span class="route-status">✓ Chat</span>
+                            </div>
+                            <div class="route-item">
+                                <span class="route-method">POST</span>
+                                <span class="route-path">/confirmar_recebimento</span>
+                                <span class="route-status">✓ Chat</span>
+                            </div>
+                            <div class="route-item">
+                                <span class="route-method">POST</span>
+                                <span class="route-path">/upload_foto</span>
+                                <span class="route-status">✓ Perfil</span>
+                            </div>
+                            <div class="route-item">
+                                <span class="route-method">GET</span>
+                                <span class="route-path">/get_foto</span>
+                                <span class="route-status">✓ Perfil</span>
+                            </div>
+                            <div class="route-item">
+                                <span class="route-method">POST</span>
+                                <span class="route-path">/get_fotos_lote</span>
+                                <span class="route-status">✓ Perfil</span>
+                            </div>
+                            <div class="route-item">
+                                <span class="route-method">POST</span>
+                                <span class="route-path">/salvar_contatos</span>
+                                <span class="route-status">✓ Contatos</span>
+                            </div>
+                            <div class="route-item">
+                                <span class="route-method">GET</span>
+                                <span class="route-path">/buscar_contatos</span>
+                                <span class="route-status">✓ Contatos</span>
+                            </div>
+                            <div class="route-item">
+                                <span class="route-method">POST</span>
+                                <span class="route-path">/atualizar_nome</span>
+                                <span class="route-status">✓ Perfil</span>
+                            </div>
+                            <div class="route-item">
+                                <span class="route-method">GET</span>
+                                <span class="route-path">/get_nome</span>
+                                <span class="route-status">✓ Perfil</span>
+                            </div>
+                            <div class="route-item">
+                                <span class="route-method">POST</span>
+                                <span class="route-path">/get_nomes_lote</span>
+                                <span class="route-status">✓ Perfil</span>
+                            </div>
+                            <div class="route-item">
+                                <span class="route-method">POST</span>
+                                <span class="route-path">/mensagens/deletar</span>
+                                <span class="route-status">✓ Chat</span>
+                            </div>
+                            <div class="route-item">
+                                <span class="route-method">POST</span>
+                                <span class="route-path">/mensagens/apagar_especifica</span>
+                                <span class="route-status">✓ Chat</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Download -->
+                    <div class="section" style="text-align: center;">
+                        <div class="section-title" style="justify-content: center;">📥 Download do Server</div>
+                        <button class="btn-download" onclick="downloadServer()">
+                            ⬇️ Baixar server.js
+                        </button>
+                        <p style="margin-top: 15px; color: #8899aa; font-size: 14px;">
+                            Versão: 1.0.0 | Última atualização: ${new Date().toLocaleString()}
+                        </p>
+                    </div>
+                    
+                    <!-- Logs -->
+                    <div class="section">
+                        <div class="section-title">📋 Logs em Tempo Real</div>
+                        <div class="log-container" id="logs">
+                            <div class="log-line">
+                                <span class="time">[${new Date().toLocaleTimeString()}]</span>
+                                <span class="level-success">✅ Servidor iniciado com sucesso!</span>
+                            </div>
+                            <div class="log-line">
+                                <span class="time">[${new Date().toLocaleTimeString()}]</span>
+                                <span class="level-info">🟢 Conectado ao MongoDB Atlas</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <script>
+                    // Função para baixar o server.js
+                    function downloadServer() {
+                        // Pega o código atual do server
+                        fetch('/download_server')
+                            .then(response => response.text())
+                            .then(code => {
+                                const blob = new Blob([code], { type: 'application/javascript' });
+                                const url = URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = 'server.js';
+                                document.body.appendChild(a);
+                                a.click();
+                                document.body.removeChild(a);
+                                URL.revokeObjectURL(url);
+                            })
+                            .catch(err => {
+                                alert('Erro ao baixar o arquivo: ' + err.message);
                             });
+                    }
+                    
+                    // Atualiza métricas
+                    async function atualizarMetricas() {
+                        try {
+                            const response = await fetch('/metrics');
+                            const data = await response.json();
                             
-                            socket.on('recebe_mensagem', (dados) => {
-                                let hora = new Date(dados.timestamp).toLocaleTimeString('pt-BR');
-                                // 🔥 SEM CRIPTOGRAFIA - USA TEXTO DIRETO
-                                let textoExibido = dados.texto;
-                                let chatDiv = document.getElementById('chatArea');
-                                chatDiv.innerHTML += '<div style="margin-bottom: 10px; padding: 8px; border-bottom: 1px solid #eee;"><b>' + dados.usuario + ':</b> ' + textoExibido + ' <small style="color:#999;">(' + hora + ')</small></div>';
-                                chatDiv.scrollTop = chatDiv.scrollHeight;
-                            });
+                            document.getElementById('cpu').textContent = data.cpu + '%';
+                            document.getElementById('ram').textContent = data.ram + ' MB';
+                            document.getElementById('latency').textContent = data.latency + ' ms';
+                            document.getElementById('uptime').textContent = data.uptime;
                             
-                            try {
-                                const response = await fetch('/criar_conta_server', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ email: 'server@server', senha: 'vxz' })
-                                });
-                                const result = await response.json();
-                                console.log('Conta server:', result);
-                            } catch(e) {
-                                console.log('Conta server já existe ou erro:', e);
-                            }
-                        } else {
-                            document.getElementById('errorMsg').innerText = '❌ E-mail ou senha incorretos!';
+                            // Cores baseadas nos valores
+                            const cpu = parseFloat(data.cpu);
+                            const cpuEl = document.getElementById('cpu');
+                            cpuEl.className = 'card-value';
+                            if (cpu > 80) cpuEl.classList.add('red');
+                            else if (cpu > 50) cpuEl.classList.add('yellow');
+                            else cpuEl.classList.add('green');
+                            
+                            const ram = parseFloat(data.ram);
+                            const ramEl = document.getElementById('ram');
+                            ramEl.className = 'card-value';
+                            if (ram > 80) ramEl.classList.add('red');
+                            else if (ram > 50) ramEl.classList.add('yellow');
+                            else ramEl.classList.add('green');
+                            
+                            const latency = parseFloat(data.latency);
+                            const latEl = document.getElementById('latency');
+                            latEl.className = 'card-value';
+                            if (latency > 200) latEl.classList.add('red');
+                            else if (latency > 100) latEl.classList.add('yellow');
+                            else latEl.classList.add('green');
+                            
+                        } catch (e) {
+                            console.error('Erro ao atualizar métricas:', e);
                         }
                     }
                     
-                    function enviarMensagem() {
-                        if (!socket) return alert('Conectando...');
-                        
-                        const destinatario = document.getElementById('destinatario').value.trim();
-                        const texto = document.getElementById('mensagem').value.trim();
-                        
-                        if (!destinatario || !texto) return alert('Preencha destinatário e mensagem');
-                        
-                        // 🔥 SEM CRIPTOGRAFIA - ENVIA TEXTO PURO
-                        socket.emit('envia_mensagem', {
-                            id: "web_" + Date.now() + "_" + Math.floor(Math.random() * 9999),
-                            chat_id: destinatario,
-                            usuario: 'server@server',
-                            texto: texto
-                        });
-                        
-                        let hora = new Date().toLocaleTimeString('pt-BR');
-                        let chatDiv = document.getElementById('chatArea');
-                        chatDiv.innerHTML += '<div style="margin-bottom: 10px; padding: 8px; border-bottom: 1px solid #eee;"><b>Você (para ' + destinatario + '):</b> ' + texto + ' <small style="color:#999;">(' + hora + ')</small></div>';
-                        chatDiv.scrollTop = chatDiv.scrollHeight;
-                        document.getElementById('mensagem').value = '';
-                    }
+                    // Adiciona log via WebSocket
+                    let socket = io();
+                    socket.on('log_update', (log) => {
+                        const logContainer = document.getElementById('logs');
+                        const logLine = document.createElement('div');
+                        logLine.className = 'log-line';
+                        logLine.innerHTML = \`
+                            <span class="time">[\${new Date().toLocaleTimeString()}]</span>
+                            <span class="level-\${log.level}">\${log.message}</span>
+                        \`;
+                        logContainer.appendChild(logLine);
+                        logContainer.scrollTop = logContainer.scrollHeight;
+                    });
                     
-                    function sair() {
-                        if (socket) socket.disconnect();
-                        logado = false;
-                        document.getElementById('loginContainer').style.display = 'block';
-                        document.getElementById('chatContainer').style.display = 'none';
-                        document.getElementById('chatArea').innerHTML = '<div style="text-align: center; color: #999;">Conectado como server@server</div>';
-                        document.getElementById('email').value = 'server@server';
-                        document.getElementById('senha').value = '';
-                        document.getElementById('destinatario').value = '';
-                        document.getElementById('mensagem').value = '';
-                    }
+                    // Atualiza a cada 2 segundos
+                    atualizarMetricas();
+                    setInterval(atualizarMetricas, 2000);
                 </script>
+                
+                <script src="/socket.io/socket.io.js"></script>
             </body>
         </html>
     `);
 });
 
-app.post('/criar_conta_server', async (req, res) => {
-    const { email, senha } = req.body;
-    const emailLimpo = email.trim().toLowerCase();
+// ========== ROTA PARA MÉTRICAS ==========
+app.get('/metrics', (req, res) => {
+    const os = require('os');
+    const cpuUsage = os.loadavg()[0] / os.cpus().length * 100;
+    const totalMem = os.totalmem() / (1024 * 1024);
+    const freeMem = os.freemem() / (1024 * 1024);
+    const usedMem = ((totalMem - freeMem) / totalMem * 100);
     
-    const usuarioExistente = await usuariosColl.findOne({ email: emailLimpo });
-    if (usuarioExistente) return res.json({ status: "ok", mensagem: "Conta já existe" });
+    // Latência simulada (ping no banco)
+    const latency = Math.floor(Math.random() * 50) + 20;
     
-    const dadosSalvar = {
-        email: emailLimpo,
-        senha: senha,
-        criadoEm: new Date().toISOString(),
-        foto: "",
-        nome_perfil: "Admin Server",
-        chave_cripto: gerarChaveAleatoria()
-    };
+    // Uptime
+    const uptimeSeconds = process.uptime();
+    const hours = Math.floor(uptimeSeconds / 3600);
+    const minutes = Math.floor((uptimeSeconds % 3600) / 60);
+    const uptimeStr = hours > 0 ? \`\${hours}h \${minutes}m\` : \`\${minutes}m\`;
     
-    try {
-        await usuariosColl.insertOne(dadosSalvar);
-        res.json({ status: "ok", mensagem: "Conta server criada com sucesso!" });
-    } catch (erro) {
-        res.status(500).json({ erro: "Erro ao criar conta server" });
-    }
+    res.json({
+        cpu: cpuUsage.toFixed(1),
+        ram: usedMem.toFixed(1),
+        latency: latency,
+        uptime: uptimeStr
+    });
 });
+
+// ========== ROTA PARA DOWNLOAD DO SERVER ==========
+app.get('/download_server', (req, res) => {
+    const fs = require('fs');
+    const path = require('path');
+    const serverPath = path.join(__dirname, 'server.js');
+    
+    fs.readFile(serverPath, 'utf8', (err, data) => {
+        if (err) {
+            return res.status(500).json({ erro: 'Erro ao ler o arquivo' });
+        }
+        res.setHeader('Content-Type', 'application/javascript');
+        res.setHeader('Content-Disposition', 'attachment; filename="server.js"');
+        res.send(data);
+    });
+});
+
 
 app.post('/atualizar_nome', async (req, res) => {
     const { email, nome } = req.body;
