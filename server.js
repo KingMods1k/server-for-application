@@ -132,64 +132,24 @@ app.post('/confirmar_recebimento', async (req, res) => {
     }
 });
 
-// ========== ROTAS DE FOTOS EM LOTE AJUSTADA PARA POST ==========
-app.post('/get_fotos_lote', async (req, res) => {
-    const { emails } = req.body; 
-    
-    console.log("📥 Emails recebidos:", emails);
-    
-    if (!emails) {
-        return res.status(400).json({ erro: "Lista de emails é obrigatória" });
-    }
-    
-    try {
-        const listaEmails = Array.isArray(emails) ? emails : JSON.parse(emails);
-        console.log("📋 Lista processada:", listaEmails);
-        
-        // 🔥 BUSCA COMPLETA (SEM PROJEÇÃO) PARA VER TUDO
-        const usuarios = await usuariosColl.find(
-            { email: { $in: listaEmails.map(e => e.trim().toLowerCase()) } }
-        ).toArray();
-        
-        console.log("👥 Usuários COMPLETOS encontrados:", JSON.stringify(usuarios, null, 2));
-        
-        // 🔥 VERIFICA CADA CAMPO
-        usuarios.forEach(u => {
-            console.log(`📧 ${u.email}:`);
-            console.log(`   - Tem foto? ${!!u.foto}`);
-            console.log(`   - Tamanho da foto: ${u.foto?.length || 0}`);
-            console.log(`   - Primeiros 50 caracteres: ${u.foto?.substring(0, 50) || 'null'}`);
-        });
-        
-        const resultado = {};
-        usuarios.forEach(usuario => {
-            if (usuario.foto && usuario.foto.length > 10) {
-                resultado[usuario.email] = usuario.foto;
-                console.log(`✅ ${usuario.email} tem foto!`);
-            } else {
-                resultado[usuario.email] = null;
-                console.log(`❌ ${usuario.email} NÃO tem foto`);
-            }
-        });
+app.get('/get_foto_email', async (req, res) => {
+    const { email } = req.query;
+    if (!email) return res.status(400).json({ erro: "Email é obrigatório" });
 
-        listaEmails.forEach(email => {
-            const emailLimpo = email.trim().toLowerCase();
-            if (!(emailLimpo in resultado)) {
-                resultado[emailLimpo] = null;
-                console.log(`⚠️ ${emailLimpo} não encontrado no banco`);
-            }
-        });
-        
-        console.log("📤 Resultado enviado:", Object.keys(resultado).map(k => ({ 
-            email: k, 
-            temFoto: resultado[k] !== null,
-            tamanho: resultado[k]?.length || 0
-        })));
-        
-        res.json(resultado);
+    const emailLimpo = email.trim().toLowerCase();
+
+    try {
+        const usuario = await usuariosColl.findOne({ email: emailLimpo });
+        if (!usuario || !usuario.foto || usuario.foto.length < 10) {
+            return res.status(404).json({ status: "sem_foto" });
+        }
+
+        const fotoBuffer = Buffer.from(usuario.foto, 'base64');
+        res.writeHead(200, { 'Content-Type': 'image/jpeg' });
+        res.end(fotoBuffer);
     } catch (erro) {
-        console.error("Erro ao buscar fotos em lote:", erro);
-        res.status(500).json({ erro: "Erro ao buscar fotos" });
+        console.error("Erro ao buscar foto individual:", erro);
+        res.status(500).json({ erro: "Erro ao buscar foto" });
     }
 });
 
