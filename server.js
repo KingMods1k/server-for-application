@@ -457,6 +457,49 @@ app.post('/login', async (req, res) => {
     }
 });
 
+app.get('/buscar_chave_publica', async (req, res) => {
+    const { email } = req.query;
+    if (!email) return res.status(400).json({ erro: "Email é obrigatório" });
+
+    const emailLimpo = email.trim().toLowerCase();
+
+    try {
+        const usuario = await usuariosColl.findOne({ email: emailLimpo });
+        if (!usuario || !usuario.chave_publica) {
+            return res.status(404).json({ erro: "Chave pública não encontrada" });
+        }
+
+        res.json({ status: "ok", chave_publica: usuario.chave_publica });
+    } catch (erro) {
+        console.error("Erro ao buscar chave pública:", erro);
+        res.status(500).json({ erro: "Erro ao buscar chave" });
+    }
+});
+app.post('/salvar_chave_publica', async (req, res) => {
+    const { email, chave_publica } = req.body;
+    if (!email || !chave_publica) {
+        return res.status(400).json({ erro: "Dados incompletos" });
+    }
+
+    const emailLimpo = email.trim().toLowerCase();
+
+    try {
+        const resultado = await usuariosColl.updateOne(
+            { email: emailLimpo },
+            { $set: { chave_publica: chave_publica } }
+        );
+
+        if (resultado.matchedCount === 0) {
+            return res.status(404).json({ erro: "Usuário não encontrado" });
+        }
+
+        res.json({ status: "ok" });
+    } catch (erro) {
+        console.error("Erro ao salvar chave pública:", erro);
+        res.status(500).json({ erro: "Erro ao salvar chave" });
+    }
+});
+
 app.post('/mensagens', async (req, res) => {
     const { email, senha } = req.body;
     if (!email || !senha) return res.status(400).json({ erro: "Não autorizado" });
@@ -574,6 +617,29 @@ socket.on('confirmar_recebimento', async (dados) => {
     }
 });
 
+socket.on('trocar_chaves', async (dados) => {
+    try {
+        const { meu_email, email_contato } = dados;
+        if (!meu_email || !email_contato) return;
+
+        const meuEmailLimpo = meu_email.trim().toLowerCase();
+        const emailContatoLimpo = email_contato.trim().toLowerCase();
+
+        const usuarioContato = await usuariosColl.findOne({ email: emailContatoLimpo });
+
+        if (usuarioContato && usuarioContato.chave_publica) {
+            // Devolve a chave pública do contato pra quem pediu
+            socket.emit('chave_publica_recebida', {
+                email: emailContatoLimpo,
+                chave_publica: usuarioContato.chave_publica
+            });
+        }
+
+        console.log(`🔑 ${meuEmailLimpo} solicitou chave pública de ${emailContatoLimpo}`);
+    } catch (erro) {
+        console.error("Erro em trocar_chaves:", erro);
+    }
+});
 
     socket.on('envia_mensagem', (dados) => {
         let { id, chat_id, usuario, texto } = dados;
@@ -612,6 +678,7 @@ socket.on('confirmar_recebimento', async (dados) => {
         console.log(`📨 Mensagem de ${remetente} para ${destinatario}`);
     });
 });
+
 // ========== PAINEL DE MONITORAMENTO ==========
 app.get('/', (req, res) => {
     res.send(`
