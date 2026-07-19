@@ -42,6 +42,16 @@ function gerarChaveAleatoria() {
     return chave;
 }
 
+function validarPacoteCifrado(pacote) {
+    if (!pacote || typeof pacote !== 'object') {
+        return 'pacote_formato_invalido';
+    }
+    if (!pacote.payload) return 'pacote_sem_payload';
+    if (!pacote.chave_aes) return 'pacote_sem_chave_aes';
+    if (!pacote.assinatura) return 'pacote_sem_assinatura';
+    return null;
+}
+
 async function garantirChaveUsuario(email) {
     const usuario = await usuariosColl.findOne({ email: email });
     if (usuario && !usuario.chave_cripto) {
@@ -535,6 +545,49 @@ socket.on('confirmar_recebimento', async (dados) => {
         }
     } catch (erro) {
         console.error("Error:", erro);
+    }
+})
+socket.on('enviar_pacote', (dados) => {
+    const { email_destino, email_origem, pacote_cifrado } = dados || {};
+
+    if (!email_destino) {
+        socket.emit('erro_pacote', { erro: 'email_destino_ausente' });
+        return;
+    }
+    if (!email_origem) {
+        socket.emit('erro_pacote', { erro: 'email_origem_ausente' });
+        return;
+    }
+    if (!pacote_cifrado) {
+        socket.emit('erro_pacote', { erro: 'pacote_cifrado_ausente' });
+        return;
+    }
+
+    const erroValidacao = validarPacoteCifrado(pacote_cifrado);
+    if (erroValidacao) {
+        socket.emit('erro_pacote', { erro: erroValidacao });
+        return;
+    }
+
+    const emailDestinoLimpo = email_destino.trim().toLowerCase();
+    const emailOrigemLimpo = email_origem.trim().toLowerCase();
+
+    const salaDestino = io.sockets.adapter.rooms.get(emailDestinoLimpo);
+
+    if (salaDestino && salaDestino.size > 0) {
+        io.to(emailDestinoLimpo).emit('pacote_recebido', {
+            email_origem: emailOrigemLimpo,
+            pacote_cifrado: pacote_cifrado
+        });
+        socket.emit('status_pacote', {
+            status: 'entregue',
+            email_destino: emailDestinoLimpo
+        });
+    } else {
+        socket.emit('status_pacote', {
+            status: 'destinatario_offline',
+            email_destino: emailDestinoLimpo
+        });
     }
 });
 
