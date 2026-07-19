@@ -6,13 +6,9 @@ const io = require('socket.io')(http, {
 });
 const path = require('path');
 const crypto = require('crypto');
-
 const { MongoClient, ServerApiVersion } = require('mongodb');
-
 app.use(express.json({ limit: '50mb' }));
-
 const uri = process.env.MONGO_URI;
-
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
@@ -22,9 +18,7 @@ const client = new MongoClient(uri, {
   tls: true,
   tlsAllowInvalidCertificates: true
 });
-
 let db, usuariosColl, contatosColl, codigosColl, mensagensColl;
-
 async function conectarBanco() {
     try {
         await client.connect();
@@ -33,14 +27,12 @@ async function conectarBanco() {
         contatosColl = db.collection("contatos"); 
 codigosColl = db.collection("codigos_verificacao");
 mensagensColl = db.collection("mensagens");
-        console.log("🟢 Conectado com sucesso ao MongoDB Atlas!");
+        console.log("🟢 Connected");
     } catch (erro) {
-        console.error("🔴 Erro ao conectar no MongoDB:", erro);
+        console.error("🔴 Error", erro);
     }
 }
 conectarBanco();
-
-// ========== FUNÇÃO PARA GERAR CHAVE ALEATÓRIA ==========
 function gerarChaveAleatoria() {
     const caracteres = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
     let chave = '';
@@ -58,7 +50,6 @@ async function garantirChaveUsuario(email) {
             { email: email },
             { $set: { chave_cripto: novaChave } }
         );
-        console.log(`✅ Chave criada para usuário existente: ${email}`);
         return novaChave;
     }
     return usuario ? usuario.chave_cripto : null;
@@ -72,10 +63,9 @@ async function garantirNomePerfil(email, nomePadrao) {
                 { email: email },
                 { $set: { nome_perfil: nomePadrao } }
             );
-            console.log(`✅ Adicionado nome_perfil para: ${email} -> ${nomePadrao}`);
         }
     } catch (erro) {
-        console.error("Erro ao garantir nome_perfil:", erro);
+        console.error("Erro", erro);
     }
 }
 
@@ -93,16 +83,16 @@ function descriptografarXOR(dadosBase64) {
         }
         return dados;
     } catch (erro) {
-        console.error('Erro na descriptografia XOR:', erro);
+        console.error('Error', erro);
         return null;
     }
 }
-// ========== ROTA HTTP PARA CONFIRMAR RECEBIMENTO (IGUAL AO SOCKET) ==========
+
 app.post('/confirmar_recebimento', async (req, res) => {
     try {
         const { email, ids } = req.body;
         if (!email || !ids || !Array.isArray(ids)) {
-            return res.status(400).json({ erro: "Dados inválidos" });
+            return res.status(400).json({ erro: "Dados inválidos." });
         }
 
         const emailFiltro = email.trim().toLowerCase();
@@ -119,9 +109,8 @@ app.post('/confirmar_recebimento', async (req, res) => {
                     { $set: { entregue: true } }
                 );
                 
-                // 🔥 NOTIFICA O REMETENTE IGUAL AO SOCKET
                 io.to(msg.usuario).emit('mensagem_recebida', { id: id });
-                console.log(`✔ Mensagem ${id} confirmada por ${emailFiltro} (HTTP)`);
+                console.log(`✔ Mensagem ${id} confirmada por ${emailFiltro}`);
             }
         }
         
@@ -134,7 +123,7 @@ app.post('/confirmar_recebimento', async (req, res) => {
 
 app.get('/get_foto_email', async (req, res) => {
     const { email } = req.query;
-    if (!email) return res.status(400).json({ erro: "Email é obrigatório" });
+    if (!email) return res.status(400).json({ erro: "Email é obrigatório." });
 
     const emailLimpo = email.trim().toLowerCase();
 
@@ -155,20 +144,18 @@ app.get('/get_foto_email', async (req, res) => {
 
 app.post('/upload_foto', async (req, res) => {
     const { email, foto } = req.body;
-    if (!email || !foto) return res.status(400).json({ erro: "Dados incompletos" });
+    if (!email || !foto) return res.status(400).json({ erro: "Dados incompletos." });
     
     const emailLimpo = email.trim().toLowerCase();
     const fotoLimpa = foto.replace(/[\s\n\r]/g, '');
     
-    // 🔥 NÃO DESCRIPTOGRAFA! NÃO CONVERTE DE NOVO!
-    // A foto JÁ VEM EM BASE64 do app
     const resultado = await usuariosColl.updateOne(
         { email: emailLimpo },
-        { $set: { foto: fotoLimpa } }  // ← SALVA DIRETO
+        { $set: { foto: fotoLimpa } } 
     );
     
     if (resultado.matchedCount === 0) {
-        return res.status(404).json({ erro: "Usuário não encontrado" });
+        return res.status(404).json({ erro: "Usuário não encontrado." });
     }
     
     io.emit('foto_atualizada', { email: emailLimpo, foto: fotoLimpa });
@@ -177,13 +164,13 @@ app.post('/upload_foto', async (req, res) => {
 
 app.get('/usuario', async (req, res) => {
     const { email } = req.query;
-    if (!email) return res.status(400).json({ erro: "Email é obrigatório" });
+    if (!email) return res.status(400).json({ erro: "Email é obrigatório." });
     
     const emailLimpo = email.trim().toLowerCase();
     
     try {
         let usuario = await usuariosColl.findOne({ email: emailLimpo });
-        if (!usuario) return res.status(404).json({ erro: "Usuário não encontrado" });
+        if (!usuario) return res.status(404).json({ erro: "Usuário não encontrado." });
         
         if (!usuario.nome_perfil) {
             const nomePadrao = emailLimpo.split('@')[0];
@@ -200,7 +187,6 @@ app.get('/usuario', async (req, res) => {
     }
 });
 
-
 app.post('/mensagens/apagar_especifica', async (req, res) => {
     try {
         const { email, senha, ids } = req.body;
@@ -213,19 +199,16 @@ app.post('/mensagens/apagar_especifica', async (req, res) => {
         const usuario = await usuariosColl.findOne({ email: emailLimpo });
 
         if (!usuario || usuario.senha !== senha) {
-            return res.status(401).json({ erro: "Não autorizado" });
+            return res.status(401).json({ erro: "Não autorizado." });
         }
 
-        // ✅ SÓ QUEM ENVIOU PODE APAGAR!
         const resultado = await mensagensColl.deleteMany({
             id: { $in: ids },
-            usuario: emailLimpo  // ← SÓ O REMETENTE!
+            usuario: emailLimpo
         });
-
-        // 🔥 Se não apagou nenhuma, avisa
         if (resultado.deletedCount === 0) {
             return res.status(404).json({ 
-                erro: "Mensagem não encontrada ou você não é o remetente" 
+                erro: "Mensagem não encontrada." 
             });
         }
 
@@ -235,15 +218,15 @@ app.post('/mensagens/apagar_especifica', async (req, res) => {
         });
 
     } catch (erro) {
-        console.error('Erro ao apagar mensagem:', erro);
-        res.status(500).json({ erro: "Erro interno" });
+        console.error('Error deleting message: ', erro);
+        res.status(500).json({ erro: "Error 155" });
     }
 });
 
 
 app.post('/salvar_contatos', async (req, res) => {
     const { email, contatos } = req.body;
-    if (!email || !contatos) return res.status(400).json({ erro: "Dados incompletos" });
+    if (!email || !contatos) return res.status(400).json({ erro: "Dados incompletos." });
     
     const emailLimpo = email.trim().toLowerCase();
     const listaContatos = Array.isArray(contatos) ? contatos : [];
@@ -256,13 +239,13 @@ app.post('/salvar_contatos', async (req, res) => {
         );
         res.json({ status: "ok" });
     } catch (erro) {
-        res.status(500).json({ erro: "Erro ao salvar contatos" });
+        res.status(500).json({ erro: "error saving contacts." });
     }
 });
 
 app.get('/buscar_contatos', async (req, res) => {
     const { email } = req.query;
-    if (!email) return res.status(400).json({ erro: "Email é obrigatório" });
+    if (!email) return res.status(400).json({ erro: "Email é obrigatório." });
     
     const emailLimpo = email.trim().toLowerCase();
     
@@ -289,7 +272,7 @@ app.get('/get_foto_contato', async (req, res) => {
         res.writeHead(200, { 'Content-Type': 'image/jpeg' });
         res.end(fotoBuffer);
     } catch (erro) {
-        res.status(500).json({ erro: "Erro ao buscar foto" });
+        res.status(500).json({ erro: "error retrieving photo." });
     }
 });
 
@@ -313,7 +296,7 @@ app.get('/get_foto', async (req, res) => {
 
 app.post('/deletar_foto', async (req, res) => {
     const { email } = req.body;
-    if (!email) return res.status(400).json({ erro: "Email é obrigatório" });
+    if (!email) return res.status(400).json({ erro: "Email é obrigatório." });
     
     const emailLimpo = email.trim().toLowerCase();
     
@@ -321,23 +304,22 @@ app.post('/deletar_foto', async (req, res) => {
         await usuariosColl.updateOne({ email: emailLimpo }, { $unset: { foto: "" } });
         res.json({ status: "ok" });
     } catch (erro) {
-        res.status(500).json({ erro: "Erro ao deletar foto" });
+        res.status(500).json({ erro: "Error deleting photo." });
     }
 });
 
 app.post('/cadastro', async (req, res) => {
     const { email, senha } = req.body;
-    if (!email || !senha) return res.status(400).json({ erro: "E-mail e Senha são obrigatórios!" });
+    if (!email || !senha) return res.status(400).json({ erro: "Email e Senha são obrigatórios." });
     
     const emailLimpo = email.trim().toLowerCase();
     
     try {
         const usuarioExistente = await usuariosColl.findOne({ email: emailLimpo });
-        if (usuarioExistente) return res.status(400).json({ erro: "Este e-mail já está cadastrado!" });
+        if (usuarioExistente) return res.status(400).json({ erro: "Este email já está cadastrado." });
         
         const codigo = Math.floor(100000 + Math.random() * 900000).toString();
         
-        // SALVA NO BANCO (em vez da memória)
         await codigosColl.updateOne(
             { email: emailLimpo },
             { $set: { 
@@ -348,8 +330,8 @@ app.post('/cadastro', async (req, res) => {
             { upsert: true }
         );
         
-        console.log(`📧 [CADASTRO] Email: ${emailLimpo} | Código: ${codigo}`);
-        return res.status(200).json({ status: "ok", mensagem: "Código gerado com sucesso!" });
+        console.log(`📧 [REGISTER] Email: ${emailLimpo} | Code: ${codigo}`);
+        return res.status(200).json({ status: "ok", mensagem: "Código enviado." });
     } catch (erro) {
         console.error("Erro no cadastro:", erro);
         return res.status(500).json({ erro: "Erro ao processar cadastro." });
@@ -369,39 +351,38 @@ app.post('/confirmar-cadastro', async (req, res) => {
         if (!registro) {
             return res.status(400).json({ erro: "Solicitação não encontrada ou expirada." });
         }
-        
         if (registro.codigo === codigoLimpo) {
             const dadosSalvar = {
                 email: emailLimpo,
                 senha: registro.senhaProvisoria,
                 criadoEm: new Date().toISOString(),
                 foto: "",
-                nome_perfil: emailLimpo.split('@')[0]
-                // ⬅️ chave_cripto REMOVIDA
+                nome_perfil: emailLimpo.split('@')[0],
+                chave_publica: ""
             };
             
             await usuariosColl.insertOne(dadosSalvar);
             await codigosColl.deleteOne({ email: emailLimpo });
             
-            return res.status(200).json({ status: "ok", mensagem: "Cadastro concluído com sucesso!" });
+            return res.status(200).json({ status: "ok", mensagem: "Cadastro concluído." });
         } else {
-            return res.status(401).json({ erro: "Código incorreto!" });
+            return res.status(401).json({ erro: "Código incorreto." });
         }
     } catch (erro) {
-        console.error("Erro ao confirmar cadastro:", erro);
+        console.error("Error: ", erro);
         return res.status(500).json({ erro: "Erro ao validar código." });
     }
 });
 
 app.post('/login', async (req, res) => {
     const { email, senha } = req.body;
-    if (!email || !senha) return res.status(400).json({ erro: "E-mail e senha são obrigatórios!" });
+    if (!email || !senha) return res.status(400).json({ erro: "Email and password are required." });
     
     const emailLimpo = email.trim().toLowerCase();
     
     try {
         const dadosUsuario = await usuariosColl.findOne({ email: emailLimpo });
-        if (!dadosUsuario) return res.status(401).json({ erro: "E-mail ou senha incorretos." });
+        if (!dadosUsuario) return res.status(401).json({ erro: "invalid email or password." });
         
         const nomePadrao = emailLimpo.split('@')[0];
         await garantirNomePerfil(emailLimpo, nomePadrao);
@@ -410,37 +391,36 @@ app.post('/login', async (req, res) => {
             await garantirChaveUsuario(emailLimpo);
             return res.status(200).json({ status: "ok", usuario: emailLimpo });
         } else {
-            return res.status(401).json({ erro: "E-mail ou senha incorretos." });
+            return res.status(401).json({ erro: "invalid email or password." });
         }
     } catch (e) {
-        return res.status(500).json({ erro: "Erro ao ler dados de autenticação." });
+        return res.status(500).json({ erro: "Error in Authentic." });
     }
 });
 
 app.get('/buscar_chave_publica', async (req, res) => {
     const { email } = req.query;
-    if (!email) return res.status(400).json({ erro: "Email é obrigatório" });
+    if (!email) return res.status(400).json({ erro: "email is required." });
 
     const emailLimpo = email.trim().toLowerCase();
 
     try {
         const usuario = await usuariosColl.findOne({ email: emailLimpo });
         if (!usuario || !usuario.chave_publica) {
-            return res.status(404).json({ erro: "Chave pública não encontrada" });
+            return res.status(404).json({ erro: "Key not Exist." });
         }
 
         res.json({ status: "ok", chave_publica: usuario.chave_publica });
     } catch (erro) {
-        console.error("Erro ao buscar chave pública:", erro);
-        res.status(500).json({ erro: "Erro ao buscar chave" });
+        console.error("Error in Key:", erro);
+        res.status(500).json({ erro: "Error 157" });
     }
 });
 app.post('/salvar_chave_publica', async (req, res) => {
     const { email, chave_publica } = req.body;
     if (!email || !chave_publica) {
-        return res.status(400).json({ erro: "Dados incompletos" });
+        return res.status(400).json({ erro: " incomplete data." });
     }
-
     const emailLimpo = email.trim().toLowerCase();
 
     try {
@@ -450,50 +430,44 @@ app.post('/salvar_chave_publica', async (req, res) => {
         );
 
         if (resultado.matchedCount === 0) {
-            return res.status(404).json({ erro: "Usuário não encontrado" });
+            return res.status(404).json({ erro: "User not find." });
         }
 
         res.json({ status: "ok" });
     } catch (erro) {
-        console.error("Erro ao salvar chave pública:", erro);
-        res.status(500).json({ erro: "Erro ao salvar chave" });
+        console.error("Error in Key:", erro);
+        res.status(500).json({ erro: "Error 158" });
     }
 });
 
 app.post('/mensagens', async (req, res) => {
     const { email, senha } = req.body;
-    if (!email || !senha) return res.status(400).json({ erro: "Não autorizado" });
+    if (!email || !senha) return res.status(400).json({ erro: "159" });
     
     const emailLimpo = email.trim().toLowerCase();
     const usuario = await usuariosColl.findOne({ email: emailLimpo });
-    if (!usuario || usuario.senha !== senha) return res.status(401).json({ erro: "Não autorizado" });
+    if (!usuario || usuario.senha !== senha) return res.status(401).json({ erro: "160" });
     const emailFiltro = email.trim().toLowerCase();
     try {
         const mensagensDoUsuario = await mensagensColl.find({
             $or: [
-                { email_contato: emailFiltro },  // mensagens recebidas
-                { usuario: emailFiltro }         // mensagens enviadas por ele
+                { email_contato: emailFiltro },
+                { usuario: emailFiltro }
             ]
-            // ← NÃO filtrar por entregue: false
         }).sort({ timestamp: 1 }).toArray();
         res.json(mensagensDoUsuario);
     } catch (erro) {
-        res.status(500).json({ erro: "Erro ao buscar mensagens" });
+        res.status(500).json({ erro: "Erro ao buscar mensagens." });
     }
 });
-
-// 🔥 FUNÇÃO DESCRIPTOGRAFAR REMOVIDA - NÃO USA MAIS CRIPTOGRAFIA
 
 app.post('/enviar', async (req, res) => {
     const { id, chat_id, usuario, texto, destinatario, timestamp } = req.body;
     
     if (!usuario || !texto || !destinatario) {
-        return res.status(400).json({ erro: "Campos obrigatórios ausentes." });
+        return res.status(400).json({ erro: "required fields." });
     }
-    
-    // 🔥 SEM CRIPTOGRAFIA - USA TEXTO DIRETO
     const textoPuro = texto;
-    
     const timestampFinal = timestamp || Date.now();
     const idValido = id || (timestampFinal + "_" + Math.floor(Math.random() * 9999));
     
@@ -507,7 +481,7 @@ app.post('/enviar', async (req, res) => {
     usuario: usuario.trim().toLowerCase(),
     texto: textoPuro,
     timestamp: timestampFinal,
-    entregue: false   // 🔥 SÓ ADICIONA ESTA LINHA
+    entregue: false
 };
     await mensagensColl.insertOne(novaMsg);
     historico.push(novaMsg);
@@ -515,51 +489,40 @@ app.post('/enviar', async (req, res) => {
     res.json({ status: "ok" });
 });
 
-
 app.post('/mensagens/deletar', async (req, res) => {
     const { meuEmail, contatoEmail } = req.query;
     if (!meuEmail || !contatoEmail) {
         return res.status(400).json({ erro: "Parâmetros obrigatórios!" });
     }
-    
     const email1 = meuEmail.trim().toLowerCase();
     const email2 = contatoEmail.trim().toLowerCase();
-    
     try {
-        // Deleta todas as mensagens trocadas entre os dois
         const resultado = await mensagensColl.deleteMany({
             $or: [
                 { email_contato: email2, usuario: email1 },
                 { email_contato: email1, usuario: email2 }
             ]
         });
-        
-        // Também limpa do array em memória (opcional)
         historico = historico.filter(msg => {
             return !((msg.email_contato === email2 && msg.usuario === email1) ||
                      (msg.email_contato === email1 && msg.usuario === email2));
         });
-        
         res.json({ status: "ok", deletadas: resultado.deletedCount });
     } catch (erro) {
-        console.error("Erro ao deletar:", erro);
-        res.status(500).json({ erro: "Erro ao deletar mensagens" });
+        console.error("Error:", erro);
+        res.status(500).json({ erro: "Erro ao deletar mensagem." });
     }
 });
-
 io.on('connection', (socket) => {
     socket.on('identificar', (email) => {
         socket.join(email);
         console.log(`✅ ${email} identificado`);
     });
-    // Novo listener: confirmação em tempo real via socket
 socket.on('confirmar_recebimento', async (dados) => {
     try {
         const { email, ids } = dados;
         if (!email || !ids || !Array.isArray(ids)) return;
-
         const emailFiltro = email.trim().toLowerCase();
-
         for (const id of ids) {
             const msg = await mensagensColl.findOne({ id: id, email_contato: emailFiltro });
             if (msg && !msg.entregue) {
@@ -567,13 +530,11 @@ socket.on('confirmar_recebimento', async (dados) => {
                     { id: id },
                     { $set: { entregue: true } }
                 );
-                // Notifica o remetente (msg.usuario)
                 io.to(msg.usuario).emit('mensagem_recebida', { id: id });
-                console.log(`✔ Mensagem ${id} confirmada por ${emailFiltro}`);
             }
         }
     } catch (erro) {
-        console.error("Erro em confirmar_recebimento (socket):", erro);
+        console.error("Error:", erro);
     }
 });
 
@@ -597,7 +558,7 @@ socket.on('trocar_chaves', async (dados) => {
 
         console.log(`🔑 ${meuEmailLimpo} solicitou chave pública de ${emailContatoLimpo}`);
     } catch (erro) {
-        console.error("Erro em trocar_chaves:", erro);
+        console.error("Error:", erro);
     }
 });
 
@@ -635,7 +596,6 @@ socket.on('trocar_chaves', async (dados) => {
         historico.push(novaMsg);
         io.to(destinatario).emit('recebe_mensagem', novaMsg);
         
-        console.log(`📨 Mensagem de ${remetente} para ${destinatario}`);
     });
 });
 
@@ -646,7 +606,7 @@ app.get('/', (req, res) => {
         <html>
             <head>
                 <meta charset="utf-8">
-                <title>MeApp - Monitor</title>
+                <title>Server Protection - Me App</title>
                 <style>
                     * { margin: 0; padding: 0; box-sizing: border-box; }
                     body { 
@@ -827,7 +787,7 @@ app.get('/', (req, res) => {
             <body>
                 <div class="container">
                     <h1>
-                        🖥️ MeApp Monitor
+                        🖥️ Cxcode Monitor App
                         <span class="status-badge">
                             <span class="dot"></span>
                             Online
@@ -844,7 +804,7 @@ app.get('/', (req, res) => {
                             <div class="card-value" id="ram">0 MB</div>
                         </div>
                         <div class="card">
-                            <div class="card-title">📡 Latência</div>
+                            <div class="card-title">📡 Latency</div>
                             <div class="card-value" id="latency">0 ms</div>
                         </div>
                         <div class="card">
@@ -854,7 +814,7 @@ app.get('/', (req, res) => {
                     </div>
                     
                     <div class="section">
-                        <div class="section-title">🔗 Rotas Disponíveis</div>
+                        <div class="section-title">💠 Rotas</div>
                         <div id="routes">
                             <div class="route-item">
                                 <span class="route-method">GET</span>
@@ -944,7 +904,7 @@ app.get('/', (req, res) => {
                             <div class="route-item">
                                 <span class="route-method">GET</span>
                                 <span class="route-path">/metrics</span>
-                                <span class="route-status">✓ Monitor</span>
+                                <span class="route-status">🖤 Monitor Cxcode 🖤</span>
                             </div>
                             <div class="route-item">
                                 <span class="route-method">GET</span>
@@ -955,7 +915,7 @@ app.get('/', (req, res) => {
                     </div>
                     
                     <div class="section" style="text-align: center;">
-                        <div class="section-title" style="justify-content: center;">📥 Download do Server</div>
+                        <div class="section-title" style="justify-content: center;">📥 download the server</div>
                         <button class="btn-download" onclick="downloadServer()">
                             ⬇️ Baixar server.js
                         </button>
@@ -965,15 +925,15 @@ app.get('/', (req, res) => {
                     </div>
                     
                     <div class="section">
-                        <div class="section-title">📋 Logs em Tempo Real</div>
+                        <div class="section-title">📋real-time logs</div>
                         <div class="log-container" id="logs">
                             <div class="log-line">
                                 <span class="time">[${new Date().toLocaleTimeString()}]</span>
-                                <span class="level-success">✅ Servidor iniciado com sucesso!</span>
+                                <span class="level-success">Server is connected</span>
                             </div>
                             <div class="log-line">
                                 <span class="time">[${new Date().toLocaleTimeString()}]</span>
-                                <span class="level-info">🟢 Conectado ao MongoDB Atlas</span>
+                                <span class="level-info">connected</span>
                             </div>
                         </div>
                     </div>
@@ -1057,7 +1017,6 @@ app.get('/', (req, res) => {
     `);
 });
 
-// ========== ROTA PARA MÉTRICAS ==========
 app.get('/metrics', (req, res) => {
     const os = require('os');
     const cpuUsage = os.loadavg()[0] / os.cpus().length * 100;
@@ -1065,10 +1024,8 @@ app.get('/metrics', (req, res) => {
     const freeMem = os.freemem() / (1024 * 1024);
     const usedMem = ((totalMem - freeMem) / totalMem * 100);
     
-    // Latência simulada (ping no banco)
     const latency = Math.floor(Math.random() * 50) + 20;
     
-    // Uptime
     const uptimeSeconds = process.uptime();
     const hours = Math.floor(uptimeSeconds / 3600);
     const minutes = Math.floor((uptimeSeconds % 3600) / 60);
@@ -1082,7 +1039,6 @@ app.get('/metrics', (req, res) => {
     });
 });
 
-// ========== ROTA PARA DOWNLOAD DO SERVER ==========
 app.get('/download_server', (req, res) => {
     const fs = require('fs');
     const path = require('path');
@@ -1127,13 +1083,13 @@ app.post('/atualizar_nome', async (req, res) => {
 
 app.get('/get_nome', async (req, res) => {
     const { email } = req.query;
-    if (!email) return res.status(400).json({ erro: "Email é obrigatório" });
+    if (!email) return res.status(400).json({ erro: "email is required." });
     
     const emailLimpo = email.trim().toLowerCase();
     
     try {
         let usuario = await usuariosColl.findOne({ email: emailLimpo });
-        if (!usuario) return res.status(404).json({ erro: "Usuário não encontrado" });
+        if (!usuario) return res.status(404).json({ erro: "user does not exist." });
         
         if (!usuario.nome_perfil) {
             const nomePadrao = emailLimpo.split('@')[0];
@@ -1146,14 +1102,14 @@ app.get('/get_nome', async (req, res) => {
         
         res.json({ status: "ok", nome: usuario.nome_perfil, email: emailLimpo });
     } catch (erro) {
-        res.status(500).json({ erro: "Erro ao buscar nome" });
+        res.status(500).json({ erro: " error retrieving name." });
     }
 });
 
 app.post('/get_nomes_lote', async (req, res) => {
     const { emails } = req.body;
     if (!emails || !Array.isArray(emails)) {
-        return res.status(400).json({ erro: "Lista de emails é obrigatória" });
+        return res.status(400).json({ erro: " email list is mandatory." });
     }
     
     try {
@@ -1174,10 +1130,9 @@ app.post('/get_nomes_lote', async (req, res) => {
         
         res.json(resultado);
     } catch (erro) {
-        res.status(500).json({ erro: "Erro ao buscar nomes" });
+        res.status(500).json({ erro: "Error214" });
     }
 });
-
 http.listen(3000, '0.0.0.0', () => {
-    console.log('🟢 Servidor rodando na porta 3000 - SEM CRIPTOGRAFIA');
+    console.log('꧁⃟ CXCODE ✔️');
 });
