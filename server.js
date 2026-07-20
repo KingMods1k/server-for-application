@@ -486,12 +486,13 @@ app.get('/buscar_chave_publica', async (req, res) => {
         res.status(500).json({ erro: "Error 157" });
     }
 });
-app.post('/salvar_chave_publica', async (req, res) => {
-    const { email, chave_publica } = req.body;
-    if (!email || !chave_publica) {
-        return res.status(400).json({ erro: " incomplete data." });
+app.post('/salvar_chave_publica', autenticarToken, async (req, res) => {
+    const { chave_publica } = req.body;
+    const emailLimpo = req.emailAutenticado; // vem do token, não do body
+
+    if (!chave_publica) {
+        return res.status(400).json({ erro: "chave_publica é obrigatória." });
     }
-    const emailLimpo = email.trim().toLowerCase();
 
     try {
         const resultado = await usuariosColl.updateOne(
@@ -500,7 +501,7 @@ app.post('/salvar_chave_publica', async (req, res) => {
         );
 
         if (resultado.matchedCount === 0) {
-            return res.status(404).json({ erro: "User not find." });
+            return res.status(404).json({ erro: "User not found." });
         }
 
         res.json({ status: "ok" });
@@ -531,10 +532,11 @@ app.post('/mensagens', async (req, res) => {
     }
 });
 
-app.post('/enviar', async (req, res) => {
-    const { id, chat_id, usuario, texto, destinatario, timestamp } = req.body;
+app.post('/enviar', autenticarToken, async (req, res) => {
+    const { id, chat_id, texto, destinatario, timestamp } = req.body;
+    const usuario = req.emailAutenticado; // ← descobre quem é aqui, pelo token validado
     
-    if (!usuario || !texto || !destinatario) {
+    if (!texto || !destinatario) {
         return res.status(400).json({ erro: "required fields." });
     }
     const textoPuro = texto;
@@ -545,14 +547,14 @@ app.post('/enviar', async (req, res) => {
     const chatIdValido = "Contato_" + listaEmails[0] + "_" + listaEmails[1];
     
     const novaMsg = { 
-    id: idValido, 
-    chat_id: chatIdValido,
-    email_contato: destinatario.trim().toLowerCase(),
-    usuario: usuario.trim().toLowerCase(),
-    texto: textoPuro,
-    timestamp: timestampFinal,
-    entregue: false
-};
+        id: idValido, 
+        chat_id: chatIdValido,
+        email_contato: destinatario.trim().toLowerCase(),
+        usuario: usuario.trim().toLowerCase(),
+        texto: textoPuro,
+        timestamp: timestampFinal,
+        entregue: false
+    };
     await mensagensColl.insertOne(novaMsg);
     historico.push(novaMsg);
     io.emit('recebe_mensagem', novaMsg);
