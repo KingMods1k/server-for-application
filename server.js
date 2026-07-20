@@ -81,6 +81,64 @@ async function garantirNomePerfil(email, nomePadrao) {
 
 const CHAVE_SECRETA = process.env.CHAVE_XOR;
 
+function gerarToken(email) {
+    const payload = JSON.stringify({ 
+        email: email, 
+        criadoEm: Date.now(),
+        expira: Date.now() + (7 * 24 * 60 * 60 * 1000) // 7 dias
+    });
+    const payloadBase64 = Buffer.from(payload).toString('base64url');
+    
+    const assinatura = crypto
+        .createHmac('sha256', CHAVE_SECRETA)
+        .update(payloadBase64)
+        .digest('base64url');
+    
+    return `${payloadBase64}.${assinatura}`;
+}
+
+function validarToken(token) {
+    if (!token || typeof token !== 'string') return null;
+    
+    const partes = token.split('.');
+    if (partes.length !== 2) return null;
+    
+    const [payloadBase64, assinatura] = partes;
+    
+    const assinaturaEsperada = crypto
+        .createHmac('sha256', CHAVE_SECRETA)
+        .update(payloadBase64)
+        .digest('base64url');
+    
+    const bufA = Buffer.from(assinatura);
+    const bufB = Buffer.from(assinaturaEsperada);
+    if (bufA.length !== bufB.length || !crypto.timingSafeEqual(bufA, bufB)) {
+        return null;
+    }
+    
+    try {
+        const payload = JSON.parse(Buffer.from(payloadBase64, 'base64url').toString());
+        if (payload.expira < Date.now()) return null;
+        return payload;
+    } catch (e) {
+        return null;
+    }
+}
+
+function autenticarToken(req, res, next) {
+    const authHeader = req.headers.authorization;
+    const token = authHeader && authHeader.startsWith('Bearer ') 
+        ? authHeader.slice(7) 
+        : null;
+    
+    const payload = validarToken(token);
+    if (!payload) {
+        return res.status(401).json({ erro: "Token inválido ou expirado." });
+    }
+    
+    req.emailAutenticado = payload.email;
+    next();
+}
 let historico = [];
 let codigosVerificacao = {};
 
@@ -374,7 +432,8 @@ app.post('/confirmar-cadastro', async (req, res) => {
             await usuariosColl.insertOne(dadosSalvar);
             await codigosColl.deleteOne({ email: emailLimpo });
             
-            return res.status(200).json({ status: "ok", mensagem: "Cadastro concluído." });
+            const token = gerarToken(emailLimpo);
+            return res.status(200).json({ status: "ok", mensagem: "Cadastro concluído.", token: token });
         } else {
             return res.status(401).json({ erro: "Código incorreto." });
         }
@@ -399,7 +458,8 @@ app.post('/login', async (req, res) => {
         
         if (dadosUsuario.senha === senha) {
             await garantirChaveUsuario(emailLimpo);
-            return res.status(200).json({ status: "ok", usuario: emailLimpo });
+            const token = gerarToken(emailLimpo);
+            return res.status(200).json({ status: "ok", usuario: emailLimpo, token: token });
         } else {
             return res.status(401).json({ erro: "invalid email or password." });
         }
