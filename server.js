@@ -171,20 +171,18 @@ app.post('/confirmar_recebimento', async (req, res) => {
                 email_contato: emailFiltro 
             });
             
-            if (msg && !msg.entregue) {
-                await mensagensColl.updateOne(
-                    { id: id },
-                    { $set: { entregue: true } }
-                );
-                
-                io.to(msg.usuario).emit('mensagem_recebida', { id: id });
-                console.log(`✔ Mensagem ${id} confirmada por ${emailFiltro}`);
+            if (msg) {
+                // 🔥 APAGA em vez de marcar
+                await mensagensColl.deleteOne({ id: id });
+                historico = historico.filter(m => m.id !== id);
+                io.to(msg.usuario).emit('mensagem_recebida_e_apagada', { id: id });
+                console.log(`🗑️ Mensagem ${id} apagada (HTTP)`);
             }
         }
         
         res.json({ status: "ok" });
     } catch (erro) {
-        console.error("Erro em confirmar_recebimento (HTTP):", erro);
+        console.error("Erro:", erro);
         res.status(500).json({ erro: "Erro ao confirmar" });
     }
 });
@@ -619,21 +617,36 @@ socket.on('confirmar_recebimento', async (dados) => {
     try {
         const { email, ids } = dados;
         if (!email || !ids || !Array.isArray(ids)) return;
+        
         const emailFiltro = email.trim().toLowerCase();
+        
         for (const id of ids) {
-            const msg = await mensagensColl.findOne({ id: id, email_contato: emailFiltro });
+            // Busca a mensagem
+            const msg = await mensagensColl.findOne({ 
+                id: id, 
+                email_contato: emailFiltro 
+            });
+            
             if (msg && !msg.entregue) {
-                await mensagensColl.updateOne(
-                    { id: id },
-                    { $set: { entregue: true } }
-                );
-                io.to(msg.usuario).emit('mensagem_recebida', { id: id });
+                // 🔥 APAGA do MongoDB (em vez de só marcar)
+                await mensagensColl.deleteOne({ id: id });
+                
+                // 🔥 APAGA da memória
+                historico = historico.filter(m => m.id !== id);
+                
+                // Notifica o remetente que foi recebido E APAGADO
+                io.to(msg.usuario).emit('mensagem_recebida_e_apagada', { id: id });
+                
+                console.log(`🗑️ Mensagem ${id} apagada após confirmação`);
             }
         }
+        
+        res.json({ status: "ok" });
     } catch (erro) {
-        console.error("Error:", erro);
+        console.error("Erro:", erro);
+        res.status(500).json({ erro: "Erro ao confirmar" });
     }
-})
+});
 socket.on('enviar_pacote', (dados) => {
     const { email_destino, email_origem, pacote_cifrado } = dados || {};
 
