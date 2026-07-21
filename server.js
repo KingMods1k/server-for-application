@@ -191,7 +191,10 @@ app.post('/confirmar_recebimento', async (req, res) => {
         res.status(500).json({ erro: "Erro ao confirmar" });
     }
 });
-
+app.post('/refresh-token', autenticarToken, (req, res) => {
+    const novoTokens = gerarToken(req.emailAutenticado);
+    res.json({ token: novoTokens });
+});
 app.get('/get_foto_email', async (req, res) => {
     const { email } = req.query;
     if (!email) return res.status(400).json({ erro: "Email é obrigatório." });
