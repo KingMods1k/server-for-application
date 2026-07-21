@@ -376,6 +376,31 @@ app.post('/deletar_foto', async (req, res) => {
     }
 });
 
+ app.get('/chave_publica_atual', autenticarToken, async (req, res) => {
+    // pega do query, não do token, pois é a chave de OUTRO usuário que quero buscar
+    const { email } = req.query;
+    if (!email) return res.status(400).json({ erro: "email é obrigatório." });
+
+    const emailLimpo = email.trim().toLowerCase();
+
+    try {
+        const usuario = await usuariosColl.findOne({ email: emailLimpo });
+        if (!usuario || !usuario.chave_publica) {
+            return res.status(404).json({ erro: "chave não encontrada." });
+        }
+
+        res.json({
+            status: "ok",
+            email: emailLimpo,
+            chave_publica: usuario.chave_publica,
+            atualizada_em: usuario.chave_atualizada_em || null
+        });
+    } catch (erro) {
+        console.error("Erro em chave_publica_atual:", erro);
+        res.status(500).json({ erro: "erro ao buscar chave." });
+    }
+});
+
 app.post('/cadastro', async (req, res) => {
     const { email, senha } = req.body;
     if (!email || !senha) return res.status(400).json({ erro: "Email e Senha são obrigatórios." });
@@ -676,7 +701,22 @@ socket.on('trocar_chaves', async (dados) => {
         console.error("Error:", erro);
     }
 });
+socket.on('aviso_nova_chave', async (dados) => {
+    try {
+        const { email } = dados || {};
+        if (!email) return;
+        const emailLimpo = email.trim().toLowerCase();
 
+        const registro = await contatosColl.findOne({ "contatos.email": emailLimpo });
+        // ou, se preferir mais simples e menos preciso por agora: io.emit global
+
+        io.emit('contato_trocou_chave', { email: emailLimpo });
+
+        console.log(`🔔 ${emailLimpo} avisou troca de chave`);
+    } catch (erro) {
+        console.error('Erro em aviso_nova_chave:', erro);
+    }
+});
     socket.on('envia_mensagem', (dados) => {
         let { id, chat_id, usuario, texto } = dados;
         const timestamp = Date.now();
