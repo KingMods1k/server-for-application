@@ -172,11 +172,14 @@ app.post('/confirmar_recebimento', async (req, res) => {
             });
             
             if (msg) {
-                // 🔥 APAGA em vez de marcar
+                // 1️⃣ PRIMEIRO: Notifica o remetente
+                io.to(msg.usuario).emit('mensagem_recebida', { id: id });
+                
+                // 2️⃣ DEPOIS: Apaga
                 await mensagensColl.deleteOne({ id: id });
                 historico = historico.filter(m => m.id !== id);
-                io.to(msg.usuario).emit('mensagem_recebida_e_apagada', { id: id });
-                console.log(`🗑️ Mensagem ${id} apagada (HTTP)`);
+                
+                console.log(`🗑️ Mensagem ${id} apagada (HTTP) após notificar`);
             }
         }
         
@@ -621,23 +624,20 @@ socket.on('confirmar_recebimento', async (dados) => {
         const emailFiltro = email.trim().toLowerCase();
         
         for (const id of ids) {
-            // Busca a mensagem
             const msg = await mensagensColl.findOne({ 
                 id: id, 
                 email_contato: emailFiltro 
             });
             
             if (msg && !msg.entregue) {
-                // 🔥 APAGA do MongoDB (em vez de só marcar)
-                await mensagensColl.deleteOne({ id: id });
+                // 1️⃣ PRIMEIRO: Notifica o remetente que foi recebido
+                io.to(msg.usuario).emit('mensagem_recebida', { id: id });
                 
-                // 🔥 APAGA da memória
+                // 2️⃣ DEPOIS: Apaga a mensagem
+                await mensagensColl.deleteOne({ id: id });
                 historico = historico.filter(m => m.id !== id);
                 
-                // Notifica o remetente que foi recebido E APAGADO
-                io.to(msg.usuario).emit('mensagem_recebida_e_apagada', { id: id });
-                
-                console.log(`🗑️ Mensagem ${id} apagada após confirmação`);
+                console.log(`✅ Mensagem ${id} recebida por ${emailFiltro} e apagada`);
             }
         }
         
