@@ -701,14 +701,12 @@ socket.on('trocar_chaves', async (dados) => {
         console.error("Error:", erro);
     }
 });
+
 socket.on('aviso_nova_chave', async (dados) => {
     try {
         const { email } = dados || {};
         if (!email) return;
         const emailLimpo = email.trim().toLowerCase();
-
-        const registro = await contatosColl.findOne({ "contatos.email": emailLimpo });
-        // ou, se preferir mais simples e menos preciso por agora: io.emit global
 
         io.emit('contato_trocou_chave', { email: emailLimpo });
 
@@ -717,6 +715,7 @@ socket.on('aviso_nova_chave', async (dados) => {
         console.error('Erro em aviso_nova_chave:', erro);
     }
 });
+
     socket.on('envia_mensagem', (dados) => {
         let { id, chat_id, usuario, texto } = dados;
         const timestamp = Date.now();
