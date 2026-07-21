@@ -171,15 +171,17 @@ app.post('/confirmar_recebimento', async (req, res) => {
                 email_contato: emailFiltro 
             });
             
-            if (msg) {
-                // 1️⃣ PRIMEIRO: Notifica o remetente
+            if (msg && !msg.entregue) {
+                // ✅ SÓ MARCA COMO ENTREGUE
+                await mensagensColl.updateOne(
+                    { id: id },
+                    { $set: { entregue: true } }
+                );
+                
+                // ✅ NOTIFICA O REMETENTE
                 io.to(msg.usuario).emit('mensagem_recebida', { id: id });
                 
-                // 2️⃣ DEPOIS: Apaga
-                await mensagensColl.deleteOne({ id: id });
-                historico = historico.filter(m => m.id !== id);
-                
-                console.log(`🗑️ Mensagem ${id} apagada (HTTP) após notificar`);
+                console.log(`✅ Mensagem ${id} confirmada por ${emailFiltro}`);
             }
         }
         
@@ -256,28 +258,27 @@ app.get('/usuario', async (req, res) => {
     }
 });
 
-app.post('/mensagens/apagar_especifica', async (req, res) => {
+app.post('/mensagens/apagar_especifica', autenticarToken, async (req, res) => {
     try {
-        const { email, senha, ids } = req.body;
+        const { ids } = req.body;
+        const emailLimpo = req.emailAutenticado; // Pega do token
 
-        if (!email || !senha || !ids || !Array.isArray(ids)) {
-            return res.status(400).json({ erro: "Dados incompletos" });
+        if (!ids || !Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ erro: "IDs são obrigatórios." });
         }
 
-        const emailLimpo = email.trim().toLowerCase();
-        const usuario = await usuariosColl.findOne({ email: emailLimpo });
-
-        if (!usuario || usuario.senha !== senha) {
-            return res.status(401).json({ erro: "Não autorizado." });
-        }
-
+        // Apaga do MongoDB (só mensagens enviadas por este usuário)
         const resultado = await mensagensColl.deleteMany({
             id: { $in: ids },
             usuario: emailLimpo
         });
+
+        // 🔥 APAGA DA MEMÓRIA (historico)
+        historico = historico.filter(msg => !ids.includes(msg.id));
+
         if (resultado.deletedCount === 0) {
             return res.status(404).json({ 
-                erro: "Mensagem não encontrada." 
+                erro: "Nenhuma mensagem encontrada para apagar." 
             });
         }
 
@@ -288,7 +289,7 @@ app.post('/mensagens/apagar_especifica', async (req, res) => {
 
     } catch (erro) {
         console.error('Error deleting message: ', erro);
-        res.status(500).json({ erro: "Error 155" });
+        res.status(500).json({ erro: "Erro ao apagar mensagens" });
     }
 });
 
@@ -616,35 +617,18 @@ io.on('connection', (socket) => {
         socket.join(email);
         console.log(`✅ ${email} identificado`);
     });
+// ✅ ASSIM ESTÁ CERTO - NÃO APAGA!
 socket.on('confirmar_recebimento', async (dados) => {
     try {
         const { email, ids } = dados;
-        if (!email || !ids || !Array.isArray(ids)) return;
-        
-        const emailFiltro = email.trim().toLowerCase();
-        
-        for (const id of ids) {
-            const msg = await mensagensColl.findOne({ 
-                id: id, 
-                email_contato: emailFiltro 
-            });
-            
-            if (msg && !msg.entregue) {
-                // 1️⃣ PRIMEIRO: Notifica o remetente que foi recebido
-                io.to(msg.usuario).emit('mensagem_recebida', { id: id });
-                
-                // 2️⃣ DEPOIS: Apaga a mensagem
-                await mensagensColl.deleteOne({ id: id });
-                historico = historico.filter(m => m.id !== id);
-                
-                console.log(`✅ Mensagem ${id} recebida por ${emailFiltro} e apagada`);
-            }
-        }
-        
-        res.json({ status: "ok" });
+        // SÓ MARCA COMO ENTREGUE
+        await mensagensColl.updateOne(
+            { id: id },
+            { $set: { entregue: true } }
+        );
+        io.to(msg.usuario).emit('mensagem_recebida', { id: id });
     } catch (erro) {
         console.error("Erro:", erro);
-        res.status(500).json({ erro: "Erro ao confirmar" });
     }
 });
 socket.on('enviar_pacote', (dados) => {
