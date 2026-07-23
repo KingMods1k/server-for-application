@@ -157,14 +157,14 @@ function descriptografarXOR(dadosBase64) {
     }
 }
 
-app.post('/confirmar_recebimento', async (req, res) => {
+app.post('/confirmar_recebimento', autenticarToken, async (req, res) => {
     try {
-        const { email, ids } = req.body;
-        if (!email || !ids || !Array.isArray(ids)) {
+        const { ids } = req.body;
+        const emailFiltro = req.emailAutenticado; // vem do token, não do body
+
+        if (!ids || !Array.isArray(ids)) {
             return res.status(400).json({ erro: "Dados inválidos." });
         }
-
-        const emailFiltro = email.trim().toLowerCase();
 
         for (const id of ids) {
             const msg = await mensagensColl.findOne({ 
@@ -173,13 +173,11 @@ app.post('/confirmar_recebimento', async (req, res) => {
             });
             
             if (msg && !msg.entregue) {
-                // ✅ SÓ MARCA COMO ENTREGUE
                 await mensagensColl.updateOne(
                     { id: id },
                     { $set: { entregue: true } }
                 );
                 
-                // ✅ NOTIFICA O REMETENTE
                 io.to(msg.usuario).emit('mensagem_recebida', { id: id });
                 
                 console.log(`✅ Mensagem ${id} confirmada por ${emailFiltro}`);
@@ -192,10 +190,12 @@ app.post('/confirmar_recebimento', async (req, res) => {
         res.status(500).json({ erro: "Erro ao confirmar" });
     }
 });
+
 app.post('/refresh-token', autenticarToken, (req, res) => {
     const novoTokens = gerarToken(req.emailAutenticado);
     res.json({ token: novoTokens });
 });
+
 app.get('/get_foto_email', async (req, res) => {
     const { email } = req.query;
     if (!email) return res.status(400).json({ erro: "Email é obrigatório." });
