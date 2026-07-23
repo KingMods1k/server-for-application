@@ -570,7 +570,7 @@ app.post('/salvar_chave_publica', autenticarToken, async (req, res) => {
 });
 
 app.post('/mensagens', autenticarToken, async (req, res) => {
-    const emailFiltro = req.emailAutenticado; // vem do token, não do body
+    const emailFiltro = req.emailAutenticado;
     try {
         const mensagensDoUsuario = await mensagensColl.find({
             $or: [
