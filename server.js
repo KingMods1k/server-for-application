@@ -5,6 +5,7 @@ const io = require('socket.io')(http, {
     cors: { origin: "*", methods: ["GET", "POST"] }
 });
 const path = require('path');
+const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const { MongoClient, ServerApiVersion } = require('mongodb');
 app.use(express.json({ limit: '50mb' }));
@@ -450,16 +451,17 @@ app.post('/confirmar-cadastro', async (req, res) => {
             return res.status(400).json({ erro: "Solicitação não encontrada ou expirada." });
         }
         if (registro.codigo === codigoLimpo) {
-            const dadosSalvar = {
-                email: emailLimpo,
-                senha: registro.senhaProvisoria,
-                criadoEm: new Date().toISOString(),
-                foto: "",
-                nome_perfil: emailLimpo.split('@')[0],
-                chave_publica: ""
-            };
-            
-            await usuariosColl.insertOne(dadosSalvar);
+    const senhaHash = await bcrypt.hash(registro.senhaProvisoria, 10);
+    const dadosSalvar = {
+        email: emailLimpo,
+        senha: senhaHash,
+        criadoEm: new Date().toISOString(),
+        foto: "",
+        nome_perfil: emailLimpo.split('@')[0],
+        chave_publica: ""
+    };
+    
+    await usuariosColl.insertOne(dadosSalvar);
             await codigosColl.deleteOne({ email: emailLimpo });
             
             const token = gerarToken(emailLimpo);
@@ -486,13 +488,14 @@ app.post('/login', async (req, res) => {
         const nomePadrao = emailLimpo.split('@')[0];
         await garantirNomePerfil(emailLimpo, nomePadrao);
         
-        if (dadosUsuario.senha === senha) {
-            await garantirChaveUsuario(emailLimpo);
-            const token = gerarToken(emailLimpo);
-            return res.status(200).json({ status: "ok", usuario: emailLimpo, token: token });
-        } else {
-            return res.status(401).json({ erro: "invalid email or password." });
-        }
+        const senhaCorreta = await bcrypt.compare(senha, dadosUsuario.senha);
+if (senhaCorreta) {
+    await garantirChaveUsuario(emailLimpo);
+    const token = gerarToken(emailLimpo);
+    return res.status(200).json({ status: "ok", usuario: emailLimpo, token: token });
+} else {
+    return res.status(401).json({ erro: "invalid email or password." });
+}
     } catch (e) {
         return res.status(500).json({ erro: "Error in Authentic." });
     }
@@ -541,14 +544,8 @@ app.post('/salvar_chave_publica', autenticarToken, async (req, res) => {
     }
 });
 
-app.post('/mensagens', async (req, res) => {
-    const { email, senha } = req.body;
-    if (!email || !senha) return res.status(400).json({ erro: "159" });
-    
-    const emailLimpo = email.trim().toLowerCase();
-    const usuario = await usuariosColl.findOne({ email: emailLimpo });
-    if (!usuario || usuario.senha !== senha) return res.status(401).json({ erro: "160" });
-    const emailFiltro = email.trim().toLowerCase();
+app.post('/mensagens', autenticarToken, async (req, res) => {
+    const emailFiltro = req.emailAutenticado; // vem do token, não do body
     try {
         const mensagensDoUsuario = await mensagensColl.find({
             $or: [
