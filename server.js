@@ -789,23 +789,12 @@ socket.on('solicitar_apagar_todos', async (dados) => {
             return;
         }
         const emailOrigem = payload.email;
-
         const emailDestinoLimpo = email_destino.trim().toLowerCase();
-        const mensagensEncontradas = await mensagensColl.find({
-            id: { $in: ids },
-            usuario: emailOrigem
-        }).toArray();
 
-        if (mensagensEncontradas.length !== ids.length) {
-            socket.emit('erro_apagar_todos', { erro: 'mensagens_nao_pertencem_ao_usuario' });
-            return;
-        }
-
-        await mensagensColl.deleteMany({ id: { $in: ids }, usuario: emailOrigem });
-        historico = historico.filter(msg => !ids.includes(msg.id));
-
+        // grava o pedido pro destinatário apagar (json guardado até ele buscar)
         await gravarPedidoApagar(emailDestinoLimpo, ids, emailOrigem);
 
+        // tenta entregar na hora se ele estiver online
         const salaDestino = io.sockets.adapter.rooms.get(emailDestinoLimpo);
         if (salaDestino && salaDestino.size > 0) {
             const pedidosAgora = await buscarEConsumirPedidos(emailDestinoLimpo);
@@ -815,7 +804,8 @@ socket.on('solicitar_apagar_todos', async (dados) => {
             }
         }
 
-        socket.emit('status_apagar_todos', { status: 'ok', apagadas: mensagensEncontradas.length });
+        // avisa quem pediu, pra ele apagar do PRÓPRIO lado também (client precisa tratar isso)
+        socket.emit('status_apagar_todos', { status: 'ok', ids: ids });
 
     } catch (erro) {
         console.error('Erro em solicitar_apagar_todos:', erro);
