@@ -774,66 +774,54 @@ socket.on('aviso_nova_chave', async (dados) => {
         
     });
 
-// A solicita apagar "para todos" — exige token + senha (reautenticação)
-    socket.on('solicitar_apagar_todos', async (dados) => {
-        try {
-            const { token, senha, ids, email_destino } = dados || {};
+socket.on('solicitar_apagar_todos', async (dados) => {
+    try {
+        const { token, ids, email_destino } = dados || {};
 
-            if (!token || !senha || !ids || !Array.isArray(ids) || ids.length === 0 || !email_destino) {
-                socket.emit('erro_apagar_todos', { erro: 'dados_incompletos' });
-                return;
-            }
-
-            const payload = validarToken(token);
-            if (!payload) {
-                socket.emit('erro_apagar_todos', { erro: 'token_invalido' });
-                return;
-            }
-            const emailOrigem = payload.email;
-
-            const usuario = await usuariosColl.findOne({ email: emailOrigem });
-            if (!usuario) {
-                socket.emit('erro_apagar_todos', { erro: 'usuario_nao_encontrado' });
-                return;
-            }
-            const senhaCorreta = await bcrypt.compare(senha, usuario.senha);
-            if (!senhaCorreta) {
-                socket.emit('erro_apagar_todos', { erro: 'senha_incorreta' });
-                return;
-            }
-
-            const emailDestinoLimpo = email_destino.trim().toLowerCase();
-            const mensagensEncontradas = await mensagensColl.find({
-                id: { $in: ids },
-                usuario: emailOrigem
-            }).toArray();
-
-            if (mensagensEncontradas.length !== ids.length) {
-                socket.emit('erro_apagar_todos', { erro: 'mensagens_nao_pertencem_ao_usuario' });
-                return;
-            }
-
-            await mensagensColl.deleteMany({ id: { $in: ids }, usuario: emailOrigem });
-            historico = historico.filter(msg => !ids.includes(msg.id));
-
-            await gravarPedidoApagar(emailDestinoLimpo, ids, emailOrigem);
-
-            const salaDestino = io.sockets.adapter.rooms.get(emailDestinoLimpo);
-            if (salaDestino && salaDestino.size > 0) {
-                const pedidosAgora = await buscarEConsumirPedidos(emailDestinoLimpo);
-                if (pedidosAgora.length > 0) {
-                    const todosIds = pedidosAgora.flatMap(p => p.ids);
-                    io.to(emailDestinoLimpo).emit('pedidos_apagar_pendentes', { ids: todosIds });
-                }
-            }
-
-            socket.emit('status_apagar_todos', { status: 'ok', apagadas: mensagensEncontradas.length });
-
-        } catch (erro) {
-            console.error('Erro em solicitar_apagar_todos:', erro);
-            socket.emit('erro_apagar_todos', { erro: 'erro_interno' });
+        if (!token || !ids || !Array.isArray(ids) || ids.length === 0 || !email_destino) {
+            socket.emit('erro_apagar_todos', { erro: 'dados_incompletos' });
+            return;
         }
-    });
+
+        const payload = validarToken(token);
+        if (!payload) {
+            socket.emit('erro_apagar_todos', { erro: 'token_invalido' });
+            return;
+        }
+        const emailOrigem = payload.email;
+
+        const emailDestinoLimpo = email_destino.trim().toLowerCase();
+        const mensagensEncontradas = await mensagensColl.find({
+            id: { $in: ids },
+            usuario: emailOrigem
+        }).toArray();
+
+        if (mensagensEncontradas.length !== ids.length) {
+            socket.emit('erro_apagar_todos', { erro: 'mensagens_nao_pertencem_ao_usuario' });
+            return;
+        }
+
+        await mensagensColl.deleteMany({ id: { $in: ids }, usuario: emailOrigem });
+        historico = historico.filter(msg => !ids.includes(msg.id));
+
+        await gravarPedidoApagar(emailDestinoLimpo, ids, emailOrigem);
+
+        const salaDestino = io.sockets.adapter.rooms.get(emailDestinoLimpo);
+        if (salaDestino && salaDestino.size > 0) {
+            const pedidosAgora = await buscarEConsumirPedidos(emailDestinoLimpo);
+            if (pedidosAgora.length > 0) {
+                const todosIds = pedidosAgora.flatMap(p => p.ids);
+                io.to(emailDestinoLimpo).emit('pedidos_apagar_pendentes', { ids: todosIds });
+            }
+        }
+
+        socket.emit('status_apagar_todos', { status: 'ok', apagadas: mensagensEncontradas.length });
+
+    } catch (erro) {
+        console.error('Erro em solicitar_apagar_todos:', erro);
+        socket.emit('erro_apagar_todos', { erro: 'erro_interno' });
+    }
+});
 
     // B pode pedir manualmente também (reconexão, polling, etc.)
     socket.on('buscar_pedidos_apagar', async (dados) => {
