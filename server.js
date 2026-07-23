@@ -19,7 +19,8 @@ const client = new MongoClient(uri, {
   tls: true,
   tlsAllowInvalidCertificates: true
 });
-let db, usuariosColl, contatosColl, codigosColl, mensagensColl;
+let db, usuariosColl, contatosColl, codigosColl, mensagensColl, pedidosApagarColl;
+
 async function conectarBanco() {
     try {
         await client.connect();
@@ -28,11 +29,13 @@ async function conectarBanco() {
         contatosColl = db.collection("contatos"); 
 codigosColl = db.collection("codigos_verificacao");
 mensagensColl = db.collection("mensagens");
+pedidosApagarColl = db.collection("pedidos_apagar");
         console.log("🟢 Connected");
     } catch (erro) {
         console.error("🔴 Error", erro);
     }
 }
+
 conectarBanco();
 function gerarChaveAleatoria() {
     const caracteres = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -155,6 +158,28 @@ function descriptografarXOR(dadosBase64) {
         console.error('Error', erro);
         return null;
     }
+}
+
+// ========== SISTEMA DE DELEÇÃO "PARA TODOS" (persistente no MongoDB) ==========
+async function gravarPedidoApagar(emailDestino, ids, emailOrigem) {
+    await pedidosApagarColl.insertOne({
+        email_destino: emailDestino,
+        email_origem: emailOrigem,
+        ids: ids,
+        criadoEm: new Date()
+    });
+}
+
+async function buscarEConsumirPedidos(emailAlvo) {
+    const emailAlvoLimpo = emailAlvo.trim().toLowerCase();
+
+    const pedidos = await pedidosApagarColl.find({ email_destino: emailAlvoLimpo }).toArray();
+    if (pedidos.length === 0) return [];
+
+    const idsDocumentos = pedidos.map(p => p._id);
+    await pedidosApagarColl.deleteMany({ _id: { $in: idsDocumentos } });
+
+    return pedidos;
 }
 
 app.post('/confirmar_recebimento', autenticarToken, async (req, res) => {
@@ -613,9 +638,22 @@ app.post('/mensagens/deletar', async (req, res) => {
     }
 });
 io.on('connection', (socket) => {
-    socket.on('identificar', (email) => {
+    
+
+socket.on('identificar', async (email) => {
         socket.join(email);
         console.log(`✅ ${email} identificado`);
+
+        try {
+            const emailLimpo = email.trim().toLowerCase();
+            const pedidos = await buscarEConsumirPedidos(emailLimpo);
+            if (pedidos.length > 0) {
+                const todosIds = pedidos.flatMap(p => p.ids);
+                socket.emit('pedidos_apagar_pendentes', { ids: todosIds });
+            }
+        } catch (erro) {
+            console.error('Erro ao buscar pendências ao identificar:', erro);
+        }
     });
 
 socket.on('enviar_pacote', (dados) => {
@@ -734,6 +772,84 @@ socket.on('aviso_nova_chave', async (dados) => {
         historico.push(novaMsg);
         io.to(destinatario).emit('recebe_mensagem', novaMsg);
         
+    });
+
+// A solicita apagar "para todos" — exige token + senha (reautenticação)
+    socket.on('solicitar_apagar_todos', async (dados) => {
+        try {
+            const { token, senha, ids, email_destino } = dados || {};
+
+            if (!token || !senha || !ids || !Array.isArray(ids) || ids.length === 0 || !email_destino) {
+                socket.emit('erro_apagar_todos', { erro: 'dados_incompletos' });
+                return;
+            }
+
+            const payload = validarToken(token);
+            if (!payload) {
+                socket.emit('erro_apagar_todos', { erro: 'token_invalido' });
+                return;
+            }
+            const emailOrigem = payload.email;
+
+            const usuario = await usuariosColl.findOne({ email: emailOrigem });
+            if (!usuario) {
+                socket.emit('erro_apagar_todos', { erro: 'usuario_nao_encontrado' });
+                return;
+            }
+            const senhaCorreta = await bcrypt.compare(senha, usuario.senha);
+            if (!senhaCorreta) {
+                socket.emit('erro_apagar_todos', { erro: 'senha_incorreta' });
+                return;
+            }
+
+            const emailDestinoLimpo = email_destino.trim().toLowerCase();
+            const mensagensEncontradas = await mensagensColl.find({
+                id: { $in: ids },
+                usuario: emailOrigem
+            }).toArray();
+
+            if (mensagensEncontradas.length !== ids.length) {
+                socket.emit('erro_apagar_todos', { erro: 'mensagens_nao_pertencem_ao_usuario' });
+                return;
+            }
+
+            await mensagensColl.deleteMany({ id: { $in: ids }, usuario: emailOrigem });
+            historico = historico.filter(msg => !ids.includes(msg.id));
+
+            await gravarPedidoApagar(emailDestinoLimpo, ids, emailOrigem);
+
+            const salaDestino = io.sockets.adapter.rooms.get(emailDestinoLimpo);
+            if (salaDestino && salaDestino.size > 0) {
+                const pedidosAgora = await buscarEConsumirPedidos(emailDestinoLimpo);
+                if (pedidosAgora.length > 0) {
+                    const todosIds = pedidosAgora.flatMap(p => p.ids);
+                    io.to(emailDestinoLimpo).emit('pedidos_apagar_pendentes', { ids: todosIds });
+                }
+            }
+
+            socket.emit('status_apagar_todos', { status: 'ok', apagadas: mensagensEncontradas.length });
+
+        } catch (erro) {
+            console.error('Erro em solicitar_apagar_todos:', erro);
+            socket.emit('erro_apagar_todos', { erro: 'erro_interno' });
+        }
+    });
+
+    // B pode pedir manualmente também (reconexão, polling, etc.)
+    socket.on('buscar_pedidos_apagar', async (dados) => {
+        try {
+            const { email } = dados || {};
+            if (!email) {
+                socket.emit('erro_apagar_todos', { erro: 'email_ausente' });
+                return;
+            }
+            const pedidos = await buscarEConsumirPedidos(email);
+            const todosIds = pedidos.flatMap(p => p.ids);
+            socket.emit('pedidos_apagar_pendentes', { ids: todosIds });
+        } catch (erro) {
+            console.error('Erro em buscar_pedidos_apagar:', erro);
+            socket.emit('erro_apagar_todos', { erro: 'erro_interno' });
+        }
     });
 });
 
