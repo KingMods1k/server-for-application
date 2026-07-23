@@ -617,20 +617,7 @@ io.on('connection', (socket) => {
         socket.join(email);
         console.log(`✅ ${email} identificado`);
     });
-// ✅ ASSIM ESTÁ CERTO - NÃO APAGA!
-socket.on('confirmar_recebimento', async (dados) => {
-    try {
-        const { email, ids } = dados;
-        // SÓ MARCA COMO ENTREGUE
-        await mensagensColl.updateOne(
-            { id: id },
-            { $set: { entregue: true } }
-        );
-        io.to(msg.usuario).emit('mensagem_recebida', { id: id });
-    } catch (erro) {
-        console.error("Erro:", erro);
-    }
-});
+
 socket.on('enviar_pacote', (dados) => {
     const { email_destino, email_origem, pacote_cifrado } = dados || {};
 
