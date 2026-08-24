@@ -122,7 +122,7 @@ process.on('uncaughtException', (err) => console.error('🔴 Uncaught Exception:
 const http = require('http').createServer(app);
 const io = require('socket.io')(http, {
     path: '/s/socket.io',
-    transports: ['websocket', 'polling'],
+    transports: ['websocket'],
     cors: { origin: "*", methods: ["GET", "POST"] },
     pingInterval: 25000,
     pingTimeout: 15000
@@ -130,22 +130,79 @@ const io = require('socket.io')(http, {
 
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
+const cookieParser = require('cookie-parser');
+const multer = require('multer');
 const { MongoClient, ServerApiVersion } = require('mongodb');
 app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
+const { createProxyMiddleware } = require('http-proxy-middleware');
+const { Resend } = require('resend');
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
+// ========== VALIDAÇÃO CENTRALIZADA DE EMAIL ==========
+// Regras: 10-100 caracteres, somente A-Z/a-z, 0-9, _, @ e .; no máximo 2 @.
+const EMAIL_REGEX_PERMITIDO = /^[A-Za-z0-9_@.]+$/;
+function validarEmailPuro(valor) {
+    if (typeof valor !== 'string') return null;
+    if (valor.length < 10 || valor.length > 100) return null;
+    if (!EMAIL_REGEX_PERMITIDO.test(valor)) return null;
+    if ((valor.match(/@/g) || []).length > 2) return null;
+    return valor.toLowerCase();
+}
 
-// 🔥 middleware do /s (reescreve a URL pro socket.io)
+function exigirEmailPuro(valor, res) {
+    const email = validarEmailPuro(valor);
+    if (!email) {
+        res.status(400).json({ erro: 'Email inválido. Use 10-100 caracteres e somente letras, números, _, @ e .; máximo de 2 @.' });
+        return null;
+    }
+    return email;
+}
+
+
+const ERLANG_TARGET = process.env.ERLANG_URL || null;
+const proxyErlang = ERLANG_TARGET ? createProxyMiddleware({
+    target: ERLANG_TARGET,
+    changeOrigin: true,
+    ws: true,
+    on: {
+        error: (err, req, res) => {
+            console.error('🔴 Erro no proxy Erlang:', err.message);
+            try {
+                if (res && res.writeHead && !res.headersSent && !res.writableEnded) {
+                    res.writeHead(502, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ erro: 'Serviço indisponível' }));
+                }
+            } catch (e) {
+                console.error('🔴 Erro secundário ao tentar responder erro de proxy:', e.message);
+            }
+        }
+    }
+}) : null;
+
 app.use((req, res, next) => {
     if (
         req.path.startsWith('/s/socket.io') ||
         req.path.startsWith('/socket.io')
     ) {
-        return next(); // deixa o socket.io interno cuidar, sem reescrever
+        return next();
     }
     if (req.path.startsWith('/s')) {
         req.url = req.url.replace(/^\/s/, '') || '/';
         return next();
     }
     return next();
+});
+
+http.on('upgrade', (req, socket, head) => {
+    if (req.url.startsWith('/s/socket.io') || req.url.startsWith('/socket.io')) {
+        return;
+    }
+    if (proxyErlang) {
+        proxyErlang.upgrade(req, socket, head);
+    } else {
+        socket.destroy();
+    }
 });
 
 const uri = process.env.MONGO_URI;
@@ -158,7 +215,7 @@ const client = new MongoClient(uri, {
   tls: true,
   tlsAllowInvalidCertificates: true
 });
-let db, usuariosColl, contatosColl, codigosColl, mensagensColl, pedidosApagarColl, confirmacoesPendentesColl;
+let db, usuariosColl, contatosColl, codigosColl, mensagensColl, pedidosApagarColl, confirmacoesPendentesColl, midiasPendentesColl;
 
 async function conectarBanco() {
     try {
@@ -169,11 +226,15 @@ async function conectarBanco() {
         codigosColl = db.collection("codigos_verificacao");
         mensagensColl = db.collection("mensagens");
         pedidosApagarColl = db.collection("pedidos_apagar");
-        confirmacoesPendentesColl = db.collection("confirmacoes_pendentes"); // 🔥 NOVA
+        confirmacoesPendentesColl = db.collection("confirmacoes_pendentes");
+        midiasPendentesColl = db.collection("midias_pendentes");
         console.log("🟢 Connected");
         await mensagensColl.createIndex({ email_contato: 1, usuario: 1 });
-await mensagensColl.createIndex({ chat_id: 1, timestamp: 1 });
-await mensagensColl.createIndex({ id: 1 }, { unique: true });
+        await mensagensColl.createIndex({ chat_id: 1, timestamp: 1 });
+        await mensagensColl.createIndex({ id: 1 }, { unique: true });
+        await midiasPendentesColl.createIndex({ id: 1 }, { unique: true });
+        await midiasPendentesColl.createIndex({ destinatario: 1 });
+        await usuariosColl.createIndex({ email: 1 }, { unique: true });
     } catch (erro) {
         console.error("🔴 Error", erro);
     }
@@ -187,6 +248,12 @@ function gerarChaveAleatoria() {
         chave += caracteres.charAt(Math.floor(Math.random() * caracteres.length));
     }
     return chave;
+}
+
+function validarIdentificadorMensagem(valor) {
+    if (typeof valor !== 'string') return false;
+    if (valor.length > 300) return false;
+    return /^[A-Za-z0-9_@.]+$/.test(valor);
 }
 
 function validarPacoteCifrado(pacote) {
@@ -253,7 +320,7 @@ function gerarToken(email) {
     const payload = JSON.stringify({ 
         email: email, 
         criadoEm: Date.now(),
-        expira: Date.now() + (7 * 24 * 60 * 60 * 1000) // 7 dias
+        expira: Date.now() + (7 * 24 * 60 * 60 * 1000)
     });
     const payloadBase64 = Buffer.from(payload).toString('base64url');
     
@@ -263,6 +330,25 @@ function gerarToken(email) {
         .digest('base64url');
     
     return `${payloadBase64}.${assinatura}`;
+}
+
+async function enviarEmailCodigo(emailDestino, codigo) {
+    try {
+        const resultado = await resend.emails.send({
+            from: process.env.EMAIL_REMETENTE || 'onboarding@resend.dev',
+            to: emailDestino,
+            subject: 'Seu código de verificação',
+            html: `<p>Seu código de verificação é:</p><h2>${codigo}</h2><p>Se você não solicitou este código, ignore este email.</p>`
+        });
+        if (resultado.error) {
+            console.error('🔴 Erro ao enviar email de verificação:', resultado.error);
+            return false;
+        }
+        return true;
+    } catch (erro) {
+        console.error('🔴 Erro ao enviar email de verificação:', erro.message);
+        return false;
+    }
 }
 
 function validarToken(token) {
@@ -307,8 +393,60 @@ function autenticarToken(req, res, next) {
     req.emailAutenticado = payload.email;
     next();
 }
+
+// ========== LOGIN DO PAINEL ADMIN (separado do login de usuários do app) ==========
+const SENHA_PAINEL = process.env.PAINEL_SENHA;
+const NOME_COOKIE_PAINEL = 'painel_sessao';
+
+function gerarTokenPainel() {
+    const payload = JSON.stringify({
+        painel: true,
+        criadoEm: Date.now(),
+        expira: Date.now() + (12 * 60 * 60 * 1000) // 12h
+    });
+    const payloadBase64 = Buffer.from(payload).toString('base64url');
+    const assinatura = crypto
+        .createHmac('sha256', CHAVE_SECRETA)
+        .update('painel:' + payloadBase64)
+        .digest('base64url');
+    return `${payloadBase64}.${assinatura}`;
+}
+
+function validarTokenPainel(token) {
+    if (!token || typeof token !== 'string') return false;
+    const partes = token.split('.');
+    if (partes.length !== 2) return false;
+    const [payloadBase64, assinatura] = partes;
+
+    const assinaturaEsperada = crypto
+        .createHmac('sha256', CHAVE_SECRETA)
+        .update('painel:' + payloadBase64)
+        .digest('base64url');
+
+    const bufA = Buffer.from(assinatura);
+    const bufB = Buffer.from(assinaturaEsperada);
+    if (bufA.length !== bufB.length || !crypto.timingSafeEqual(bufA, bufB)) {
+        return false;
+    }
+
+    try {
+        const payload = JSON.parse(Buffer.from(payloadBase64, 'base64url').toString());
+        if (!payload.painel || payload.expira < Date.now()) return false;
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+function autenticarPainel(req, res, next) {
+    const token = req.cookies ? req.cookies[NOME_COOKIE_PAINEL] : null;
+    if (!validarTokenPainel(token)) {
+        return res.redirect('/');
+    }
+    next();
+}
+
 let historico = [];
-let codigosVerificacao = {};
 
 function descriptografarXOR(dadosBase64) {
     try {
@@ -354,7 +492,8 @@ app.post('/apagar_para_todos', autenticarToken, async (req, res) => {
             return res.status(400).json({ erro: "Dados incompletos." });
         }
 
-        const emailDestinoLimpo = email_destino.trim().toLowerCase();
+        const emailDestinoLimpo = validarEmailPuro(email_destino);
+        if (!emailDestinoLimpo) return res.status(400).json({ erro: 'Email destinatário inválido.' });
 
         await gravarPedidoApagar(emailDestinoLimpo, ids, emailOrigem);
 
@@ -382,7 +521,6 @@ app.post('/confirmar_recebimento', autenticarToken, async (req, res) => {
             return res.status(400).json({ erro: "Dados inválidos." });
         }
 
-        // busca tudo de uma vez, não 1 por 1
         const msgsNaoEntregues = await mensagensColl.find({
             id: { $in: ids },
             email_contato: emailFiltro,
@@ -395,13 +533,11 @@ app.post('/confirmar_recebimento', autenticarToken, async (req, res) => {
 
         const idsParaAtualizar = msgsNaoEntregues.map(m => m.id);
 
-        // um único update pra todas
         await mensagensColl.updateMany(
             { id: { $in: idsParaAtualizar } },
             { $set: { entregue: true } }
         );
 
-        // agrupa por remetente pra emitir/gravar pendência em lote
         const porRemetente = {};
         for (const msg of msgsNaoEntregues) {
             const remetente = msg.usuario.trim().toLowerCase();
@@ -415,7 +551,6 @@ for (const [remetente, idsDoRemetente] of Object.entries(porRemetente)) {
         for (const id of idsDoRemetente) {
             io.timeout(5000).to(remetente).emit('mensagem_recebida', { id }, async (err, responses) => {
                 if (err || !responses || responses.length === 0) {
-                    // ninguém confirmou a tempo -> grava como pendente pra reentrega
                     await gravarConfirmacaoPendente(remetente, id);
                 }
             });
@@ -443,7 +578,8 @@ app.get('/get_foto_email', async (req, res) => {
     const { email } = req.query;
     if (!email) return res.status(400).json({ erro: "Email é obrigatório." });
 
-    const emailLimpo = email.trim().toLowerCase();
+    const emailLimpo = exigirEmailPuro(email, res);
+    if (!emailLimpo) return;
 
     try {
         const usuario = await usuariosColl.findOne({ email: emailLimpo });
@@ -484,7 +620,8 @@ app.get('/usuario', async (req, res) => {
     const { email } = req.query;
     if (!email) return res.status(400).json({ erro: "Email é obrigatório." });
     
-    const emailLimpo = email.trim().toLowerCase();
+    const emailLimpo = exigirEmailPuro(email, res);
+    if (!emailLimpo) return;
     
     try {
         let usuario = await usuariosColl.findOne({ email: emailLimpo });
@@ -508,19 +645,17 @@ app.get('/usuario', async (req, res) => {
 app.post('/mensagens/apagar_especifica', autenticarToken, async (req, res) => {
     try {
         const { ids } = req.body;
-        const emailLimpo = req.emailAutenticado; // Pega do token
+        const emailLimpo = req.emailAutenticado;
 
         if (!ids || !Array.isArray(ids) || ids.length === 0) {
             return res.status(400).json({ erro: "IDs são obrigatórios." });
         }
 
-        // Apaga do MongoDB (só mensagens enviadas por este usuário)
         const resultado = await mensagensColl.deleteMany({
             id: { $in: ids },
             usuario: emailLimpo
         });
 
-        // 🔥 APAGA DA MEMÓRIA (historico)
         historico = historico.filter(msg => !ids.includes(msg.id));
 
         if (resultado.deletedCount === 0) {
@@ -574,7 +709,8 @@ app.get('/get_foto_contato', async (req, res) => {
     const { email } = req.query;
     if (!email) return res.status(400).json({ erro: "Email é obrigatório" });
     
-    const emailLimpo = email.trim().toLowerCase();
+    const emailLimpo = exigirEmailPuro(email, res);
+    if (!emailLimpo) return;
     
     try {
         const usuario = await usuariosColl.findOne({ email: emailLimpo });
@@ -592,7 +728,8 @@ app.get('/get_foto', async (req, res) => {
     const { email } = req.query;
     if (!email) return res.status(400).json({ erro: "Email é obrigatório" });
     
-    const emailLimpo = email.trim().toLowerCase();
+    const emailLimpo = exigirEmailPuro(email, res);
+    if (!emailLimpo) return;
     
     try {
         const usuario = await usuariosColl.findOne({ email: emailLimpo });
@@ -618,15 +755,21 @@ app.post('/deletar_foto', autenticarToken, async (req, res) => {
 });
 
  app.get('/chave_publica_atual', autenticarToken, async (req, res) => {
-    // pega do query, não do token, pois é a chave de OUTRO usuário que quero buscar
     const { email } = req.query;
     if (!email) return res.status(400).json({ erro: "email é obrigatório." });
 
-    const emailLimpo = email.trim().toLowerCase();
+    const emailLimpo = exigirEmailPuro(email, res);
+    if (!emailLimpo) return;
 
     try {
         const usuario = await usuariosColl.findOne({ email: emailLimpo });
         if (!usuario || !usuario.chave_publica) {
+            // 🔧 mesmo tratamento de /buscar_chave_publica: pede reenvio se online
+            const salaDono = io.sockets.adapter.rooms.get(emailLimpo);
+            if (salaDono && salaDono.size > 0) {
+                io.to(emailLimpo).emit('pedir_chave_publica');
+                console.log(`🔑 Chave pública ausente para ${emailLimpo} — pedido de reenvio disparado`);
+            }
             return res.status(404).json({ erro: "chave não encontrada." });
         }
 
@@ -649,7 +792,8 @@ app.post('/cadastro', async (req, res) => {
         return res.status(400).json({ erro: "Email e Senha são obrigatórios." });
     }
     
-    const emailLimpo = email.trim().toLowerCase();
+    const emailLimpo = exigirEmailPuro(email, res);
+    if (!emailLimpo) return;
     
     try {
         const usuarioExistente = await usuariosColl.findOne({ email: emailLimpo });
@@ -667,7 +811,17 @@ app.post('/cadastro', async (req, res) => {
             { upsert: true }
         );
         
-        console.log(`📧 [REGISTER] Email: ${emailLimpo} | Code: ${codigo}`);
+        if (resend) {
+            const emailEnviado = await enviarEmailCodigo(emailLimpo, codigo);
+            if (!emailEnviado) {
+                return res.status(502).json({ erro: "Não foi possível enviar o email de verificação. Tente novamente." });
+            }
+            console.log(`📧 [REGISTER] Email enviado para: ${emailLimpo}`);
+        } else {
+            // Render não possui RESEND_API_KEY no ambiente atual. Mantém o fluxo
+            // compatível com o servidor antigo: o código fica disponível no log.
+            console.log(`📧 [REGISTER] RESEND_API_KEY ausente — código para ${emailLimpo}: ${codigo}`);
+        }
         return res.status(200).json({ status: "ok", mensagem: "Código enviado." });
     } catch (erro) {
         console.error("Erro no cadastro:", erro);
@@ -682,7 +836,8 @@ app.post('/confirmar-cadastro', async (req, res) => {
         return res.status(400).json({ erro: "Dados incompletos para validação." });
     }
     
-    const emailLimpo = email.trim().toLowerCase();
+    const emailLimpo = exigirEmailPuro(email, res);
+    if (!emailLimpo) return;
     const codigoLimpo = codigo.trim();
     
     try {
@@ -693,16 +848,24 @@ app.post('/confirmar-cadastro', async (req, res) => {
         }
         if (registro.codigo === codigoLimpo) {
             const senhaHash = await bcrypt.hash(registro.senhaProvisoria, 10);
-            const dadosSalvar = {
-                email: emailLimpo,
-                senha: senhaHash,
-                criadoEm: new Date().toISOString(),
-                foto: "",
-                nome_perfil: emailLimpo.split('@')[0],
-                chave_publica: ""
-            };
-            
-            await usuariosColl.insertOne(dadosSalvar);
+
+            // 🔧 upsert em vez de insertOne: se o usuário já existir (ex: confirmação
+            // enviada duas vezes por retry de rede ou duplo clique), não sobrescreve
+            // os dados existentes (como chave_publica) — só cria se realmente não existir.
+            await usuariosColl.updateOne(
+                { email: emailLimpo },
+                {
+                    $setOnInsert: {
+                        email: emailLimpo,
+                        senha: senhaHash,
+                        criadoEm: new Date().toISOString(),
+                        foto: "",
+                        nome_perfil: emailLimpo.split('@')[0],
+                        chave_publica: ""
+                    }
+                },
+                { upsert: true }
+            );
             await codigosColl.deleteOne({ email: emailLimpo });
             
             const token = gerarToken(emailLimpo);
@@ -723,7 +886,8 @@ app.post('/login', async (req, res) => {
         return res.status(400).json({ erro: "Email and password are required." });
     }
     
-    const emailLimpo = email.trim().toLowerCase();
+    const emailLimpo = exigirEmailPuro(email, res);
+    if (!emailLimpo) return;
     
     try {
         const dadosUsuario = await usuariosColl.findOne({ email: emailLimpo });
@@ -749,11 +913,20 @@ app.get('/buscar_chave_publica', async (req, res) => {
     const { email } = req.query;
     if (!email) return res.status(400).json({ erro: "email is required." });
 
-    const emailLimpo = email.trim().toLowerCase();
+    const emailLimpo = exigirEmailPuro(email, res);
+    if (!emailLimpo) return;
 
     try {
         const usuario = await usuariosColl.findOne({ email: emailLimpo });
         if (!usuario || !usuario.chave_publica) {
+            // 🔧 chave ausente/vazia (ex: cadastro duplicado sobrescreveu com chave em
+            // branco) — se o dono da chave estiver online, pede pro app dele reenviar.
+            // Quem fez essa requisição vai precisar tentar de novo em alguns segundos.
+            const salaDono = io.sockets.adapter.rooms.get(emailLimpo);
+            if (salaDono && salaDono.size > 0) {
+                io.to(emailLimpo).emit('pedir_chave_publica');
+                console.log(`🔑 Chave pública ausente para ${emailLimpo} — pedido de reenvio disparado`);
+            }
             return res.status(404).json({ erro: "Key not Exist." });
         }
 
@@ -765,7 +938,7 @@ app.get('/buscar_chave_publica', async (req, res) => {
 });
 app.post('/salvar_chave_publica', autenticarToken, async (req, res) => {
     const { chave_publica } = req.body;
-    const emailLimpo = req.emailAutenticado; // vem do token, não do body
+    const emailLimpo = req.emailAutenticado;
 
     if (!chave_publica) {
         return res.status(400).json({ erro: "chave_publica é obrigatória." });
@@ -801,42 +974,256 @@ app.post('/mensagens', autenticarToken, async (req, res) => {
 });
 
 app.post('/enviar', autenticarToken, async (req, res) => {
-    const { id, chat_id, texto, destinatario, timestamp } = req.body;
-    const usuario = req.emailAutenticado; // ← descobre quem é aqui, pelo token validado
-    
-    if (!texto || !destinatario) {
+    const { id, chat_id, texto, destinatario, timestamp, tem_midia } = req.body;
+    const usuario = req.emailAutenticado;
+
+    // === Proteção contra NoSQL injection: cada campo precisa ser do tipo
+    // esperado antes de tocar o Mongo. Sem isso, um payload como
+    // {"texto": {"$ne": null}} passaria reto pro insertOne() e pode alterar
+    // o comportamento de queries/índices que reutilizam esses campos.
+    if (destinatario !== undefined && typeof destinatario !== 'string') {
+        return res.status(400).json({ erro: "invalid destinatario." });
+    }
+    if (id !== undefined && id !== null && typeof id !== 'string') {
+        return res.status(400).json({ erro: "invalid id." });
+    }
+    if (chat_id !== undefined && chat_id !== null && typeof chat_id !== 'string') {
+        return res.status(400).json({ erro: "invalid chat_id." });
+    }
+    if (timestamp !== undefined && timestamp !== null && typeof timestamp !== 'number') {
+        return res.status(400).json({ erro: "invalid timestamp." });
+    }
+    if (tem_midia !== undefined && typeof tem_midia !== 'boolean') {
+        return res.status(400).json({ erro: "invalid tem_midia." });
+    }
+    if (texto !== undefined && texto !== null && typeof texto !== 'string') {
+        return res.status(400).json({ erro: "invalid texto." });
+    }
+
+    const ehMensagemDeMidia = tem_midia === true;
+
+    if ((!texto && !ehMensagemDeMidia) || !destinatario) {
         return res.status(400).json({ erro: "required fields." });
     }
-    const textoPuro = texto;
+
+    // 🔧 CORRIGIDO: antes, tem_midia=true sempre forçava texto=null no banco,
+    // descartando qualquer legenda que o app tivesse mandado junto com a
+    // mídia. Agora aceita um texto real como legenda (com limite de 30k
+    // caracteres e remoção de bytes nulos/caracteres de controle, mesmo
+    // padrão de qualquer texto que entra no banco), mas continua permitindo
+    // mídia sem legenda (texto vazio/ausente vira null como antes).
+    let textoPuro = null;
+    if (ehMensagemDeMidia) {
+        if (typeof texto === 'string' && texto.length > 0) {
+            if (texto.length > 30000) {
+                return res.status(400).json({ erro: "texto too long (max 30000 characters)." });
+            }
+            // remove bytes nulos e caracteres de controle (exceto \n \r \t),
+            // que não têm uso legítimo em texto de chat e podem confundir
+            // clientes ou ferramentas de log/análise rio abaixo.
+            textoPuro = texto.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
+        }
+    } else {
+        if (texto.length > 30000) {
+            return res.status(400).json({ erro: "texto too long (max 30000 characters)." });
+        }
+        textoPuro = texto.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
+    }
+
     const timestampFinal = timestamp || Date.now();
     const idValido = id || (timestampFinal + "_" + Math.floor(Math.random() * 9999));
     
-    const listaEmails = [usuario.trim().toLowerCase(), destinatario.trim().toLowerCase()].sort();
+    const destinatarioValidado = validarEmailPuro(destinatario);
+    if (!destinatarioValidado) return res.status(400).json({ erro: 'Email destinatário inválido.' });
+    const listaEmails = [usuario.trim().toLowerCase(), destinatarioValidado].sort();
     const chatIdValido = "Contato_" + listaEmails[0] + "_" + listaEmails[1];
     
     const novaMsg = { 
         id: idValido, 
         chat_id: chatIdValido,
-        email_contato: destinatario.trim().toLowerCase(),
+        email_contato: destinatarioValidado,
         usuario: usuario.trim().toLowerCase(),
         texto: textoPuro,
+        tem_midia: ehMensagemDeMidia,
         timestamp: timestampFinal,
         entregue: false
     };
-    await mensagensColl.insertOne(novaMsg);
+    try {
+        await mensagensColl.insertOne(novaMsg);
+    } catch (erroInsert) {
+        if (erroInsert && erroInsert.code === 11000) {
+            // 🔧 CORRIGIDO: mesmo id já foi inserido por uma chamada concorrente
+            // (upload duplicado disparado por race condition no app) — trata
+            // como sucesso idempotente em vez de estourar erro 500 e o cliente
+            // ficar reenviando pra sempre por causa de uma falha que na
+            // prática não é uma falha (a mensagem já existe no servidor).
+            console.warn(`⚠️ Envio duplicado da mensagem ${idValido} ignorado (id já existia)`);
+            return res.json({ status: "ok" });
+        }
+        throw erroInsert;
+    }
     historico.push(novaMsg);
 if (historico.length > 500) historico.shift();
     io.emit('recebe_mensagem', novaMsg);
     res.json({ status: "ok" });
 });
 
+// 🔧 CORRIGIDO: rotas HTTP de mídia (/enviar_midia, /baixar_midia) e o setup
+// do multer/pasta de mídias estavam DENTRO de io.on('connection', ...) — ou
+// seja, eram re-registradas no Express a CADA conexão de socket.io (cada app
+// abrindo, cada reconexão de rede, cada retry do BackgroundService). Isso
+// empilhava handlers duplicados pra sempre no router do Express (vazamento de
+// memória que só cresce) e deixava a existência da rota dependendo de já ter
+// havido pelo menos UMA conexão de socket desde que o servidor subiu — logo
+// após um restart/deploy, /enviar_midia podia responder 404 até o primeiro
+// socket conectar. Agora registradas uma única vez, no boot do servidor.
+// ========== UPLOAD / DOWNLOAD DE MÍDIA CIFRADA (correio temporário) ==========
+const PASTA_MIDIAS = path.join(__dirname, 'midias');
+if (!fs.existsSync(PASTA_MIDIAS)) fs.mkdirSync(PASTA_MIDIAS, { recursive: true });
+
+const uploadMidia = multer({
+    storage: multer.diskStorage({
+        destination: (req, file, cb) => {
+            const destinatario = validarEmailPuro(req.body.destinatario);
+            if (!destinatario) return cb(new Error('email_destinatario_invalido'));
+            const pastaDestino = path.join(PASTA_MIDIAS, destinatario);
+            if (!fs.existsSync(pastaDestino)) fs.mkdirSync(pastaDestino, { recursive: true });
+            cb(null, pastaDestino);
+        },
+        filename: (req, file, cb) => {
+            // 🔧 CORRIGIDO: nome sempre único por tentativa de upload (id +
+            // timestamp + aleatório), nunca só "id + .zip.enc". Antes, dois
+            // uploads com o mesmo id (duplicados por race condition no app)
+            // escreviam no MESMO caminho em disco — o segundo sobrescrevia o
+            // primeiro ANTES do handler sequer rodar, então mesmo detectando
+            // a duplicata depois já era tarde: o arquivo do upload original
+            // já tinha sido perdido. Agora cada tentativa tem seu próprio
+            // arquivo em disco; o handler decide depois qual promover.
+            const id = req.body.id || (Date.now() + "_" + Math.floor(Math.random() * 9999));
+            const sufixoUnico = Date.now() + "_" + Math.floor(Math.random() * 1e9);
+            cb(null, id + "." + sufixoUnico + ".tmp");
+        }
+    }),
+    limits: { fileSize: 200 * 1024 * 1024 } // 200MB
+});
+
+app.post('/enviar_midia', autenticarToken, uploadMidia.single('arquivo'), async (req, res) => {
+    let arquivoFinalPath = null;
+    try {
+        const { id, chat_id, destinatario, chave_aes_cifrada, iv, timestamp, nome_arquivo_original } = req.body;
+        const remetente = req.emailAutenticado;
+
+        if (!req.file) {
+            return res.status(400).json({ erro: "arquivo_ausente" });
+        }
+        if (!id || !destinatario || !chave_aes_cifrada || !iv) {
+            fs.unlink(req.file.path, () => {});
+            return res.status(400).json({ erro: "required fields." });
+        }
+
+        const destinatarioLimpo = validarEmailPuro(destinatario);
+        if (!destinatarioLimpo) {
+            fs.unlink(req.file.path, () => {});
+            return res.status(400).json({ erro: 'Email destinatário inválido.' });
+        }
+
+        // nome final desejado (o que o download/limpeza esperam encontrar)
+        arquivoFinalPath = path.join(path.dirname(req.file.path), id + ".zip.enc");
+
+        // 🔧 CORRIGIDO: tenta RESERVAR o id primeiro via insertOne (o índice
+        // único em midias_pendentes.id garante atomicidade — o Mongo só deixa
+        // UMA dessas chamadas concorrentes vencer, mesmo com várias rodando
+        // ao mesmo tempo). Só quem vence a reserva promove seu arquivo
+        // temporário pro nome final; quem perde apaga o próprio temporário
+        // sem tocar em nada do vencedor.
+        try {
+            await midiasPendentesColl.insertOne({
+                id: id,
+                chat_id: chat_id || null,
+                remetente: remetente.trim().toLowerCase(),
+                destinatario: destinatarioLimpo,
+                chave_aes_cifrada: chave_aes_cifrada,
+                iv: iv,
+                nome_arquivo_original: nome_arquivo_original || null,
+                tamanho: req.file.size,
+                caminho_arquivo: arquivoFinalPath,
+                timestamp: timestamp || Date.now(),
+                criadoEm: new Date()
+            });
+        } catch (erroInsert) {
+            if (erroInsert && erroInsert.code === 11000) {
+                // perdeu a corrida — essa mídia já foi salva por outra tentativa
+                // (upload duplicado do mesmo id). Descarta só o próprio
+                // temporário, não mexe no arquivo/registro do vencedor.
+                console.warn(`⚠️ Upload duplicado de mídia ${id} descartado (id já existia)`);
+                fs.unlink(req.file.path, () => {});
+                return res.json({ status: "ok" });
+            }
+            throw erroInsert;
+        }
+
+        // ganhou a reserva — promove o temporário pro nome final
+        fs.renameSync(req.file.path, arquivoFinalPath);
+
+        // avisa o destinatário, se estiver online, que tem mídia esperando
+        const salaDestino = io.sockets.adapter.rooms.get(destinatarioLimpo);
+        if (salaDestino && salaDestino.size > 0) {
+            io.to(destinatarioLimpo).emit('midia_disponivel', { id: id });
+        }
+
+        res.json({ status: "ok" });
+    } catch (erro) {
+        console.error('Erro em /enviar_midia:', erro);
+        // se já promovemos o arquivo pro nome final antes do erro, não apaga
+        // o final (a mídia pode estar íntegra) — só limpa o temporário
+        // original se ainda existir sob esse caminho.
+        if (req.file && fs.existsSync(req.file.path)) {
+            fs.unlink(req.file.path, () => {});
+        }
+        res.status(500).json({ erro: "Erro ao salvar mídia." });
+    }
+});
+
+// app pede o pacote completo (arquivo + chave + IV) por HTTP, usando os mesmos
+// headers customizados que /baixar_apk usa pra streaming binário
+app.get('/baixar_midia/:id', autenticarToken, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const emailAutenticado = req.emailAutenticado.trim().toLowerCase();
+
+        const midia = await midiasPendentesColl.findOne({ id: id });
+        if (!midia) {
+            return res.status(404).json({ erro: "midia_nao_encontrada" });
+        }
+        // só o destinatário legítimo pode baixar — servidor nunca decifra o conteúdo
+        if (midia.destinatario !== emailAutenticado) {
+            return res.status(403).json({ erro: "nao_autorizado" });
+        }
+        if (!fs.existsSync(midia.caminho_arquivo)) {
+            return res.status(404).json({ erro: "arquivo_nao_encontrado_em_disco" });
+        }
+
+        res.setHeader('Content-Type', 'application/octet-stream');
+        res.setHeader('Content-Disposition', `attachment; filename="${id}.zip.enc"`);
+        res.setHeader('X-Chave-Aes-Cifrada', midia.chave_aes_cifrada);
+        res.setHeader('X-Iv', midia.iv);
+        res.setHeader('X-Nome-Arquivo-Original', encodeURIComponent(midia.nome_arquivo_original || ''));
+        res.setHeader('Access-Control-Expose-Headers', 'X-Chave-Aes-Cifrada, X-Iv, X-Nome-Arquivo-Original');
+
+        fs.createReadStream(midia.caminho_arquivo).pipe(res);
+    } catch (erro) {
+        console.error('Erro em /baixar_midia:', erro);
+        res.status(500).json({ erro: "Erro ao buscar mídia." });
+    }
+});
+
 io.on('connection', (socket) => {
-    
 
 socket.on('identificar', async (email) => {
     if (!email || typeof email !== 'string') return;
 
-    const emailLimpo = email.trim().toLowerCase();
+    const emailLimpo = validarEmailPuro(email);
+    if (!emailLimpo) return socket.emit('erro_email', { erro: 'Email inválido.' });
     socket.join(emailLimpo);
     console.log(`✅ ${emailLimpo} identificado`);
 
@@ -847,8 +1234,6 @@ socket.on('identificar', async (email) => {
             socket.emit('pedidos_apagar_pendentes', { ids: todosIds });
         }
 
-        // 🔥 NOVO: reentrega confirmações de "mensagem recebida" que
-        // ficaram pendentes enquanto este usuário estava offline/reconectando
         const confirmacoesPendentes = await buscarEConsumirConfirmacoesPendentes(emailLimpo);
         confirmacoesPendentes.forEach(c => {
             socket.emit('mensagem_recebida', { id: c.id });
@@ -856,8 +1241,56 @@ socket.on('identificar', async (email) => {
         if (confirmacoesPendentes.length > 0) {
             console.log(`📬 ${confirmacoesPendentes.length} confirmação(ões) de entrega reentregue(s) para ${emailLimpo}`);
         }
+
+        const mensagensPendentes = await mensagensColl.find({
+            email_contato: emailLimpo,
+            entregue: { $ne: true }
+        }).sort({ timestamp: 1 }).toArray();
+
+        if (mensagensPendentes.length > 0) {
+            mensagensPendentes.forEach(msg => {
+                socket.emit('recebe_mensagem', msg);
+            });
+            console.log(`📨 ${mensagensPendentes.length} mensagem(ns) pendente(s) reentregue(s) para ${emailLimpo}`);
+        }
+
+        // reforça o aviso de mídia pendente: se o usuário tinha mídia esperando e
+        // ficou offline, precisa receber 'midia_disponivel' de novo ao reconectar
+        const midiasPendentes = await midiasPendentesColl.find({
+            destinatario: emailLimpo
+        }).toArray();
+
+        if (midiasPendentes.length > 0) {
+            midiasPendentes.forEach(m => {
+                socket.emit('midia_disponivel', { id: m.id });
+            });
+            console.log(`📦 ${midiasPendentes.length} mídia(s) pendente(s) reavisada(s) para ${emailLimpo}`);
+        }
     } catch (erro) {
         console.error('Erro ao buscar pendências ao identificar:', erro);
+    }
+});
+
+// app confirma "y" — recebeu e salvou o pacote com sucesso — servidor então
+// deleta o arquivo do disco e o registro do Mongo (papel de "correio temporário")
+socket.on('confirmar_midia_recebida', async (dados) => {
+    try {
+        const { id } = dados || {};
+        if (!id || typeof id !== 'string') return;
+
+        const midia = await midiasPendentesColl.findOne({ id: id });
+        if (!midia) return;
+
+        if (midia.caminho_arquivo && fs.existsSync(midia.caminho_arquivo)) {
+            fs.unlink(midia.caminho_arquivo, (erro) => {
+                if (erro) console.error(`Erro ao apagar arquivo de mídia ${id}:`, erro.message);
+            });
+        }
+
+        await midiasPendentesColl.deleteOne({ id: id });
+        console.log(`🗑️ Mídia ${id} confirmada e apagada (arquivo + registro)`);
+    } catch (erro) {
+        console.error('Erro em confirmar_midia_recebida:', erro);
     }
 });
 
@@ -884,8 +1317,12 @@ socket.on('enviar_pacote', (dados) => {
         return;
     }
 
-    const emailDestinoLimpo = email_destino.trim().toLowerCase();
-    const emailOrigemLimpo = email_origem.trim().toLowerCase();
+    const emailDestinoLimpo = validarEmailPuro(email_destino);
+    const emailOrigemLimpo = validarEmailPuro(email_origem);
+    if (!emailDestinoLimpo || !emailOrigemLimpo) {
+        socket.emit('erro_pacote', { erro: 'email_invalido' });
+        return;
+    }
 
     const salaDestino = io.sockets.adapter.rooms.get(emailDestinoLimpo);
 
@@ -913,8 +1350,9 @@ socket.on('trocar_chaves', async (dados) => {
             return;
         }
 
-        const meuEmailLimpo = meu_email.trim().toLowerCase();
-        const emailContatoLimpo = email_contato.trim().toLowerCase();
+        const meuEmailLimpo = validarEmailPuro(meu_email);
+        const emailContatoLimpo = validarEmailPuro(email_contato);
+        if (!meuEmailLimpo || !emailContatoLimpo) return;
 
         const usuarioContato = await usuariosColl.findOne({ email: emailContatoLimpo });
 
@@ -935,7 +1373,8 @@ socket.on('aviso_nova_chave', async (dados) => {
     try {
         const { email } = dados || {};
         if (!email || typeof email !== 'string') return;
-        const emailLimpo = email.trim().toLowerCase();
+        const emailLimpo = validarEmailPuro(email);
+        if (!emailLimpo) return;
 
         io.emit('contato_trocou_chave', { email: emailLimpo });
 
@@ -960,12 +1399,11 @@ socket.on('solicitar_apagar_todos', async (dados) => {
             return;
         }
         const emailOrigem = payload.email;
-        const emailDestinoLimpo = email_destino.trim().toLowerCase();
+        const emailDestinoLimpo = validarEmailPuro(email_destino);
+        if (!emailDestinoLimpo) return res.status(400).json({ erro: 'Email destinatário inválido.' });
 
-        // grava o pedido pro destinatário apagar (json guardado até ele buscar)
         await gravarPedidoApagar(emailDestinoLimpo, ids, emailOrigem);
 
-        // tenta entregar na hora se ele estiver online
         const salaDestino = io.sockets.adapter.rooms.get(emailDestinoLimpo);
         if (salaDestino && salaDestino.size > 0) {
             const pedidosAgora = await buscarEConsumirPedidos(emailDestinoLimpo);
@@ -975,7 +1413,6 @@ socket.on('solicitar_apagar_todos', async (dados) => {
             }
         }
 
-        // avisa quem pediu, pra ele apagar do PRÓPRIO lado também (client precisa tratar isso)
         socket.emit('status_apagar_todos', { status: 'ok', ids: ids });
 
     } catch (erro) {
@@ -996,8 +1433,16 @@ socket.on('envia_mensagem', async (dados) => {
             return;
         }
 
-        const remetente = payload.email.trim().toLowerCase();
-        const destinatario = chat_id ? chat_id.trim().toLowerCase() : "";
+        const remetente = validarEmailPuro(payload.email);
+        if (!remetente) {
+            socket.emit('erro_envio', { erro: 'email_token_invalido' });
+            return;
+        }
+        const destinatario = chat_id ? validarEmailPuro(chat_id) : "";
+        if (chat_id && !destinatario) {
+            socket.emit('erro_envio', { erro: 'email_destinatario_invalido' });
+            return;
+        }
 
         const timestamp = Date.now();
         const idValido = (id && typeof id === 'string')
@@ -1037,7 +1482,6 @@ socket.on('envia_mensagem', async (dados) => {
 
         io.to(destinatario).emit('recebe_mensagem', novaMsg);
     });
-    // B pode pedir manualmente também (reconexão, polling, etc.)
     socket.on('buscar_pedidos_apagar', async (dados) => {
     try {
         const { email } = dados || {};
@@ -1055,421 +1499,362 @@ socket.on('envia_mensagem', async (dados) => {
 });
 });
 
-// ========== PAINEL DE MONITORAMENTO ==========
-app.get('/', (req, res) => {
-    res.send(`
-        <!DOCTYPE html>
-        <html>
-            <head>
-                <meta charset="utf-8">
-                <title>Server Protection - Me App</title>
-                <style>
-                    * { margin: 0; padding: 0; box-sizing: border-box; }
-                    body { 
-                        font-family: 'Segoe UI', Arial, sans-serif; 
-                        background: #0a0e17; 
-                        color: #fff;
-                        min-height: 100vh;
-                        padding: 20px;
-                    }
-                    .container {
-                        max-width: 1200px;
-                        margin: 0 auto;
-                    }
-                    h1 {
-                        font-size: 28px;
-                        margin-bottom: 30px;
-                        color: #00d4ff;
-                        display: flex;
-                        align-items: center;
-                        gap: 15px;
-                    }
-                    .status-badge {
-                        font-size: 14px;
-                        background: #00c853;
-                        padding: 5px 15px;
-                        border-radius: 20px;
-                        font-weight: normal;
-                        display: inline-flex;
-                        align-items: center;
-                        gap: 8px;
-                    }
-                    .status-badge .dot {
-                        width: 8px;
-                        height: 8px;
-                        background: #fff;
-                        border-radius: 50%;
-                        animation: pulse 1.5s infinite;
-                    }
-                    @keyframes pulse {
-                        0%, 100% { opacity: 1; }
-                        50% { opacity: 0.3; }
-                    }
-                    
-                    .grid {
-                        display: grid;
-                        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-                        gap: 20px;
-                        margin-bottom: 30px;
-                    }
-                    .card {
-                        background: rgba(255,255,255,0.05);
-                        backdrop-filter: blur(10px);
-                        border: 1px solid rgba(255,255,255,0.1);
-                        border-radius: 15px;
-                        padding: 25px;
-                        transition: all 0.3s;
-                    }
-                    .card:hover {
-                        transform: translateY(-5px);
-                        border-color: rgba(0, 212, 255, 0.3);
-                        box-shadow: 0 10px 30px rgba(0, 212, 255, 0.1);
-                    }
-                    .card-title {
-                        font-size: 12px;
-                        text-transform: uppercase;
-                        letter-spacing: 1px;
-                        color: #8899aa;
-                        margin-bottom: 10px;
-                    }
-                    .card-value {
-                        font-size: 32px;
-                        font-weight: bold;
-                        color: #00d4ff;
-                    }
-                    .card-value.green { color: #00c853; }
-                    .card-value.yellow { color: #ffd600; }
-                    .card-value.red { color: #ff1744; }
-                    
-                    .section {
-                        background: rgba(255,255,255,0.03);
-                        border-radius: 15px;
-                        padding: 25px;
-                        margin-bottom: 20px;
-                        border: 1px solid rgba(255,255,255,0.05);
-                    }
-                    .section-title {
-                        font-size: 18px;
-                        margin-bottom: 15px;
-                        color: #00d4ff;
-                        display: flex;
-                        align-items: center;
-                        gap: 10px;
-                    }
-                    .route-item {
-                        padding: 8px 12px;
-                        margin: 5px 0;
-                        background: rgba(255,255,255,0.03);
-                        border-radius: 8px;
-                        display: flex;
-                        align-items: center;
-                        gap: 15px;
-                        font-family: 'Courier New', monospace;
-                        font-size: 14px;
-                        border-left: 3px solid #00d4ff;
-                    }
-                    .route-method {
-                        color: #00d4ff;
-                        font-weight: bold;
-                        min-width: 60px;
-                    }
-                    .route-path {
-                        color: #fff;
-                        flex: 1;
-                    }
-                    .route-status {
-                        font-size: 12px;
-                        padding: 2px 10px;
-                        border-radius: 10px;
-                        background: #00c853;
-                        color: #000;
-                    }
-                    
-                    .btn-download {
-                        display: inline-flex;
-                        align-items: center;
-                        gap: 10px;
-                        background: #00d4ff;
-                        color: #000;
-                        padding: 12px 30px;
-                        border-radius: 10px;
-                        text-decoration: none;
-                        font-weight: bold;
-                        transition: all 0.3s;
-                        border: none;
-                        cursor: pointer;
-                        font-size: 16px;
-                    }
-                    .btn-download:hover {
-                        transform: scale(1.02);
-                        box-shadow: 0 5px 20px rgba(0, 212, 255, 0.3);
-                    }
-                    
-                    .log-container {
-                        max-height: 300px;
-                        overflow-y: auto;
-                        background: rgba(0,0,0,0.3);
-                        border-radius: 10px;
-                        padding: 15px;
-                        font-family: 'Courier New', monospace;
-                        font-size: 12px;
-                        color: #8899aa;
-                    }
-                    .log-line {
-                        padding: 3px 0;
-                        border-bottom: 1px solid rgba(255,255,255,0.03);
-                    }
-                    .log-line .time {
-                        color: #556677;
-                        margin-right: 10px;
-                    }
-                    .log-line .level-info { color: #00d4ff; }
-                    .log-line .level-error { color: #ff1744; }
-                    .log-line .level-success { color: #00c853; }
-                    
-                    ::-webkit-scrollbar {
-                        width: 6px;
-                    }
-                    ::-webkit-scrollbar-track {
-                        background: rgba(255,255,255,0.05);
-                        border-radius: 10px;
-                    }
-                    ::-webkit-scrollbar-thumb {
-                        background: #00d4ff;
-                        border-radius: 10px;
-                    }
-                </style>
-            </head>
-            <body>
-                <div class="container">
-                    <h1>
-                        🖥️ Cxcode Monitor App
-                        <span class="status-badge">
-                            <span class="dot"></span>
-                            Online
-                        </span>
-                    </h1>
-                    
-                    <div class="grid">
-                        <div class="card">
-                            <div class="card-title">💻 CPU Usage</div>
-                            <div class="card-value" id="cpu">0%</div>
-                        </div>
-                        <div class="card">
-                            <div class="card-title">🧠 RAM Usage</div>
-                            <div class="card-value" id="ram">0 MB</div>
-                        </div>
-                        <div class="card">
-                            <div class="card-title">📡 Latency</div>
-                            <div class="card-value" id="latency">0 ms</div>
-                        </div>
-                        <div class="card">
-                            <div class="card-title">⏱️ Uptime</div>
-                            <div class="card-value" id="uptime">0h</div>
-                        </div>
-                    </div>
-                    
-                    <div class="section">
-                        <div class="section-title">💠 Rotas</div>
-                        <div id="routes">
-                            <div class="route-item">
-                                <span class="route-method">GET</span>
-                                <span class="route-path">/</span>
-                                <span class="route-status">✓ Painel</span>
-                            </div>
-                            <div class="route-item">
-                                <span class="route-method">POST</span>
-                                <span class="route-path">/login</span>
-                                <span class="route-status">✓ Auth</span>
-                            </div>
-                            <div class="route-item">
-                                <span class="route-method">POST</span>
-                                <span class="route-path">/cadastro</span>
-                                <span class="route-status">✓ Auth</span>
-                            </div>
-                            <div class="route-item">
-                                <span class="route-method">POST</span>
-                                <span class="route-path">/confirmar-cadastro</span>
-                                <span class="route-status">✓ Auth</span>
-                            </div>
-                            <div class="route-item">
-                                <span class="route-method">POST</span>
-                                <span class="route-path">/enviar</span>
-                                <span class="route-status">✓ Chat</span>
-                            </div>
-                            <div class="route-item">
-                                <span class="route-method">POST</span>
-                                <span class="route-path">/mensagens</span>
-                                <span class="route-status">✓ Chat</span>
-                            </div>
-                            <div class="route-item">
-                                <span class="route-method">POST</span>
-                                <span class="route-path">/confirmar_recebimento</span>
-                                <span class="route-status">✓ Chat</span>
-                            </div>
-                            <div class="route-item">
-                                <span class="route-method">POST</span>
-                                <span class="route-path">/upload_foto</span>
-                                <span class="route-status">✓ Perfil</span>
-                            </div>
-                            <div class="route-item">
-                                <span class="route-method">GET</span>
-                                <span class="route-path">/get_foto</span>
-                                <span class="route-status">✓ Perfil</span>
-                            </div>
-                            <div class="route-item">
-                                <span class="route-method">POST</span>
-                                <span class="route-path">/get_fotos_lote</span>
-                                <span class="route-status">✓ Perfil</span>
-                            </div>
-                            <div class="route-item">
-                                <span class="route-method">POST</span>
-                                <span class="route-path">/salvar_contatos</span>
-                                <span class="route-status">✓ Contatos</span>
-                            </div>
-                            <div class="route-item">
-                                <span class="route-method">GET</span>
-                                <span class="route-path">/buscar_contatos</span>
-                                <span class="route-status">✓ Contatos</span>
-                            </div>
-                            <div class="route-item">
-                                <span class="route-method">POST</span>
-                                <span class="route-path">/atualizar_nome</span>
-                                <span class="route-status">✓ Perfil</span>
-                            </div>
-                            <div class="route-item">
-                                <span class="route-method">GET</span>
-                                <span class="route-path">/get_nome</span>
-                                <span class="route-status">✓ Perfil</span>
-                            </div>
-                            <div class="route-item">
-                                <span class="route-method">POST</span>
-                                <span class="route-path">/get_nomes_lote</span>
-                                <span class="route-status">✓ Perfil</span>
-                            </div>
-                            <div class="route-item">
-                                <span class="route-method">POST</span>
-                                <span class="route-path">/mensagens/apagar_especifica</span>
-                                <span class="route-status">✓ Chat</span>
-                            </div>
-                            <div class="route-item">
-                                <span class="route-method">GET</span>
-                                <span class="route-path">/metrics</span>
-                                <span class="route-status">🖤 Monitor Cxcode 🖤</span>
-                            </div>
-                            <div class="route-item">
-                                <span class="route-method">GET</span>
-                                <span class="route-path">/download_server</span>
-                                <span class="route-status">✓ Monitor</span>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="section" style="text-align: center;">
-                        <div class="section-title" style="justify-content: center;">📥 download the server</div>
-                        <button class="btn-download" onclick="downloadServer()">
-                            ⬇️ Baixar server.js
-                        </button>
-                        <p style="margin-top: 15px; color: #8899aa; font-size: 14px;">
-                            Versão: 1.0.0 | Última atualização: ${new Date().toLocaleString()}
-                        </p>
-                    </div>
-                    
-                    <div class="section">
-                        <div class="section-title">📋real-time logs</div>
-                        <div class="log-container" id="logs">
-                            <div class="log-line">
-                                <span class="time">[${new Date().toLocaleTimeString()}]</span>
-                                <span class="level-success">Server is connected</span>
-                            </div>
-                            <div class="log-line">
-                                <span class="time">[${new Date().toLocaleTimeString()}]</span>
-                                <span class="level-info">connected</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <script src="/s/socket.io/socket.io.js"></script>
-                <script>
-                    function downloadServer() {
-                        fetch('/download_server')
-                            .then(response => response.text())
-                            .then(code => {
-                                const blob = new Blob([code], { type: 'application/javascript' });
-                                const url = URL.createObjectURL(blob);
-                                const a = document.createElement('a');
-                                a.href = url;
-                                a.download = 'servernd.js';
-                                document.body.appendChild(a);
-                                a.click();
-                                document.body.removeChild(a);
-                                URL.revokeObjectURL(url);
-                            })
-                            .catch(err => {
-                                alert('Erro ao baixar o arquivo: ' + err.message);
-                            });
-                    }
-                    
-                    async function atualizarMetricas() {
-                        try {
-                            const response = await fetch('/metrics');
-                            const data = await response.json();
-                            
-                            document.getElementById('cpu').textContent = data.cpu + '%';
-                            document.getElementById('ram').textContent = data.ram + ' MB';
-                            document.getElementById('latency').textContent = data.latency + ' ms';
-                            document.getElementById('uptime').textContent = data.uptime;
-                            
-                            const cpu = parseFloat(data.cpu);
-                            const cpuEl = document.getElementById('cpu');
-                            cpuEl.className = 'card-value';
-                            if (cpu > 80) cpuEl.classList.add('red');
-                            else if (cpu > 50) cpuEl.classList.add('yellow');
-                            else cpuEl.classList.add('green');
-                            
-                            const ram = parseFloat(data.ram);
-                            const ramEl = document.getElementById('ram');
-                            ramEl.className = 'card-value';
-                            if (ram > 80) ramEl.classList.add('red');
-                            else if (ram > 50) ramEl.classList.add('yellow');
-                            else ramEl.classList.add('green');
-                            
-                            const latency = parseFloat(data.latency);
-                            const latEl = document.getElementById('latency');
-                            latEl.className = 'card-value';
-                            if (latency > 200) latEl.classList.add('red');
-                            else if (latency > 100) latEl.classList.add('yellow');
-                            else latEl.classList.add('green');
-                            
-                        } catch (e) {
-                            console.error('Erro ao atualizar métricas:', e);
-                        }
-                    }
-                    
-                    // Socket.io para logs
-                    const socket = io({ path: '/s/socket.io' });
-                    socket.on('log_update', function(log) {
-                        const logContainer = document.getElementById('logs');
-                        const logLine = document.createElement('div');
-                        logLine.className = 'log-line';
-                        const time = new Date().toLocaleTimeString();
-                        logLine.innerHTML = '<span class="time">[' + time + ']</span><span class="level-' + log.level + '">' + log.message + '</span>';
-                        logContainer.appendChild(logLine);
-                        logContainer.scrollTop = logContainer.scrollHeight;
-                    });
-                    
-                    // Inicia atualizações
-                    atualizarMetricas();
-                    setInterval(atualizarMetricas, 2000);
-                </script>
-            </body>
-        </html>
-    `);
+// ========== UPLOAD / DEPLOY DE APK ==========
+const PASTA_APKS = path.join(__dirname, 'apks');
+if (!fs.existsSync(PASTA_APKS)) fs.mkdirSync(PASTA_APKS, { recursive: true });
+const CAMINHO_APK_ATUAL = path.join(PASTA_APKS, 'latest.apk');
+const CAMINHO_APK_META = path.join(PASTA_APKS, 'meta.json');
+
+const uploadApk = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 300 * 1024 * 1024 }, // 300MB
+    fileFilter: (req, file, cb) => {
+        const nomeOk = file.originalname.toLowerCase().endsWith('.apk');
+        const tipoOk = file.mimetype === 'application/vnd.android.package-archive'
+            || file.mimetype === 'application/octet-stream';
+        if (nomeOk && tipoOk) return cb(null, true);
+        cb(new Error('arquivo_nao_e_apk'));
+    }
 });
 
-let cpuAnterior = process.cpuUsage();
-let tempoAnterior = process.hrtime();
+function lerMetaApk() {
+    try {
+        if (fs.existsSync(CAMINHO_APK_META)) {
+            return JSON.parse(fs.readFileSync(CAMINHO_APK_META, 'utf8'));
+        }
+    } catch (erro) {
+        console.error('Erro ao ler meta do apk:', erro.message);
+    }
+    return null;
+}
+
+// -------- versão Web do aplicativo --------
+// Coloque o arquivo cn.twoendtwo.html na mesma pasta deste server.js.
+app.get('/', (req, res) => {
+    const caminhoWeb = path.join(__dirname, 'cn.twoendtwo.html');
+    if (!fs.existsSync(caminhoWeb)) {
+        return res.status(404).send('Arquivo cn.twoendtwo.html não encontrado.');
+    }
+    res.sendFile(caminhoWeb);
+});
+
+// -------- login do painel administrativo --------
+app.get('/painel_login', (req, res) => {
+    const token = req.cookies ? req.cookies[NOME_COOKIE_PAINEL] : null;
+    if (validarTokenPainel(token)) {
+        return res.redirect('/painel');
+    }
+    res.send(paginaLogin());
+});
+
+app.post('/painel_login', (req, res) => {
+    const { usuario, senha } = req.body || {};
+
+    if (!senha || typeof senha !== 'string' || !SENHA_PAINEL) {
+        return res.send(paginaLogin('Login indisponível ou senha incorreta.'));
+    }
+
+    const bufA = Buffer.from(senha);
+    const bufB = Buffer.from(SENHA_PAINEL);
+    const senhaOk = bufA.length === bufB.length && crypto.timingSafeEqual(bufA, bufB);
+
+    if (!senhaOk) {
+        return res.send(paginaLogin('Usuário ou senha incorreta.'));
+    }
+
+    const tokenPainel = gerarTokenPainel();
+    res.cookie(NOME_COOKIE_PAINEL, tokenPainel, {
+        httpOnly: true,
+        sameSite: 'strict',
+        maxAge: 12 * 60 * 60 * 1000
+    });
+    res.redirect('/painel');
+});
+
+app.post('/painel_logout', (req, res) => {
+    res.clearCookie(NOME_COOKIE_PAINEL);
+    res.redirect('/');
+});
+
+// -------- painel de upload (protegido) --------
+app.get('/painel', autenticarPainel, (req, res) => {
+    const meta = lerMetaApk();
+    res.send(paginaPainel(meta));
+});
+
+app.post('/painel/upload_apk', autenticarPainel, (req, res) => {
+    uploadApk.single('apk')(req, res, (erro) => {
+        if (erro) {
+            const msg = erro.message === 'arquivo_nao_e_apk'
+                ? 'O arquivo enviado não é um .apk válido.'
+                : 'Erro ao processar o upload: ' + erro.message;
+            return res.send(paginaPainel(lerMetaApk(), msg));
+        }
+        if (!req.file) {
+            return res.send(paginaPainel(lerMetaApk(), 'Nenhum arquivo recebido.'));
+        }
+
+        const versionCodeStr = (req.body && req.body.version_code) ? req.body.version_code.trim() : '';
+        const versionCode = parseInt(versionCodeStr, 10);
+        if (!versionCodeStr || !Number.isInteger(versionCode) || versionCode <= 0) {
+            return res.send(paginaPainel(lerMetaApk(), 'Informe um versionCode válido (número inteiro positivo).'));
+        }
+
+        try {
+            fs.writeFileSync(CAMINHO_APK_ATUAL, req.file.buffer);
+            const meta = {
+                nomeOriginal: req.file.originalname,
+                tamanhoBytes: req.file.size,
+                versionCode: versionCode,
+                enviadoEm: new Date().toISOString()
+            };
+            fs.writeFileSync(CAMINHO_APK_META, JSON.stringify(meta, null, 2));
+            console.log(`📦 Novo APK recebido: ${req.file.originalname} (${(req.file.size / 1024 / 1024).toFixed(1)} MB) — versionCode ${versionCode}`);
+            return res.send(paginaPainel(meta, null, 'APK enviado e salvo com sucesso.'));
+        } catch (erroSalvar) {
+            console.error('Erro ao salvar apk:', erroSalvar);
+            return res.send(paginaPainel(lerMetaApk(), 'Erro ao salvar o arquivo no servidor.'));
+        }
+    });
+});
+
+function paginaLogin(mensagemErro) {
+    return `
+        <!DOCTYPE html>
+        <html lang="pt-br">
+        <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>Painel — Login</title>
+            <style>
+                * { margin: 0; padding: 0; box-sizing: border-box; }
+                body {
+                    font-family: 'Segoe UI', Arial, sans-serif;
+                    background: #0a0e17;
+                    color: #fff;
+                    min-height: 100vh;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    padding: 20px;
+                }
+                .box {
+                    width: 100%;
+                    max-width: 380px;
+                    background: rgba(255,255,255,0.05);
+                    border: 1px solid rgba(255,255,255,0.1);
+                    border-radius: 16px;
+                    padding: 36px 32px;
+                }
+                h1 {
+                    font-size: 20px;
+                    color: #00d4ff;
+                    margin-bottom: 6px;
+                }
+                p.sub {
+                    color: #8899aa;
+                    font-size: 13px;
+                    margin-bottom: 28px;
+                }
+                label {
+                    display: block;
+                    font-size: 12px;
+                    text-transform: uppercase;
+                    letter-spacing: 1px;
+                    color: #8899aa;
+                    margin-bottom: 6px;
+                }
+                input {
+                    width: 100%;
+                    background: rgba(0,0,0,0.3);
+                    border: 1px solid rgba(255,255,255,0.1);
+                    border-radius: 8px;
+                    padding: 12px 14px;
+                    color: #fff;
+                    font-size: 15px;
+                    margin-bottom: 18px;
+                    outline: none;
+                }
+                input:focus { border-color: #00d4ff; }
+                button {
+                    width: 100%;
+                    background: #00d4ff;
+                    color: #000;
+                    border: none;
+                    border-radius: 8px;
+                    padding: 13px;
+                    font-size: 15px;
+                    font-weight: bold;
+                    cursor: pointer;
+                }
+                button:hover { opacity: 0.9; }
+                .erro {
+                    background: rgba(255,23,68,0.15);
+                    border: 1px solid rgba(255,23,68,0.4);
+                    color: #ff8a9b;
+                    padding: 10px 14px;
+                    border-radius: 8px;
+                    font-size: 13px;
+                    margin-bottom: 18px;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="box">
+                <h1>🔒 Painel administrativo</h1>
+                <p class="sub">Acesso restrito</p>
+                ${mensagemErro ? `<div class="erro">${mensagemErro}</div>` : ''}
+                <form method="POST" action="/painel_login">
+                    <label>Usuário</label>
+                    <input type="text" name="usuario" autocomplete="username" placeholder="admin">
+                    <label>Senha</label>
+                    <input type="password" name="senha" autocomplete="current-password" required>
+                    <button type="submit">Entrar</button>
+                </form>
+            </div>
+        </body>
+        </html>
+    `;
+}
+
+function paginaPainel(meta, mensagemErro, mensagemSucesso) {
+    const infoApk = meta ? `
+        <div class="apk-info">
+            <div><strong>Arquivo:</strong> ${meta.nomeOriginal}</div>
+            <div><strong>Tamanho:</strong> ${(meta.tamanhoBytes / 1024 / 1024).toFixed(1)} MB</div>
+            <div><strong>versionCode:</strong> ${meta.versionCode ?? '—'}</div>
+            <div><strong>Enviado em:</strong> ${new Date(meta.enviadoEm).toLocaleString('pt-BR')}</div>
+        </div>
+    ` : `<div class="apk-info vazio">Nenhum APK enviado ainda.</div>`;
+
+    return `
+        <!DOCTYPE html>
+        <html lang="pt-br">
+        <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>Painel — Deploy APK</title>
+            <style>
+                * { margin: 0; padding: 0; box-sizing: border-box; }
+                body {
+                    font-family: 'Segoe UI', Arial, sans-serif;
+                    background: #0a0e17;
+                    color: #fff;
+                    min-height: 100vh;
+                    padding: 30px 20px;
+                }
+                .container { max-width: 560px; margin: 0 auto; }
+                header {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin-bottom: 28px;
+                }
+                h1 { font-size: 22px; color: #00d4ff; }
+                .logout-form button {
+                    background: transparent;
+                    border: 1px solid rgba(255,255,255,0.2);
+                    color: #8899aa;
+                    padding: 8px 16px;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    font-size: 13px;
+                }
+                .logout-form button:hover { color: #fff; border-color: #fff; }
+                .card {
+                    background: rgba(255,255,255,0.05);
+                    border: 1px solid rgba(255,255,255,0.1);
+                    border-radius: 16px;
+                    padding: 28px;
+                    margin-bottom: 20px;
+                }
+                .card h2 {
+                    font-size: 15px;
+                    color: #00d4ff;
+                    margin-bottom: 16px;
+                    text-transform: uppercase;
+                    letter-spacing: 1px;
+                }
+                .apk-info div { margin-bottom: 6px; font-size: 14px; color: #cdd; }
+                .apk-info.vazio { color: #8899aa; font-style: italic; }
+                .drop {
+                    border: 2px dashed rgba(255,255,255,0.15);
+                    border-radius: 12px;
+                    padding: 30px;
+                    text-align: center;
+                    margin: 20px 0;
+                }
+                input[type="file"] {
+                    color: #cdd;
+                    width: 100%;
+                }
+                button.enviar {
+                    width: 100%;
+                    background: #00d4ff;
+                    color: #000;
+                    border: none;
+                    border-radius: 8px;
+                    padding: 13px;
+                    font-size: 15px;
+                    font-weight: bold;
+                    cursor: pointer;
+                    margin-top: 16px;
+                }
+                button.enviar:hover { opacity: 0.9; }
+                .msg-erro {
+                    background: rgba(255,23,68,0.15);
+                    border: 1px solid rgba(255,23,68,0.4);
+                    color: #ff8a9b;
+                    padding: 10px 14px;
+                    border-radius: 8px;
+                    font-size: 13px;
+                    margin-bottom: 18px;
+                }
+                .msg-sucesso {
+                    background: rgba(0,200,83,0.15);
+                    border: 1px solid rgba(0,200,83,0.4);
+                    color: #7fffb0;
+                    padding: 10px 14px;
+                    border-radius: 8px;
+                    font-size: 13px;
+                    margin-bottom: 18px;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <header>
+                    <h1>📦 Deploy do APK</h1>
+                    <form class="logout-form" method="POST" action="/painel_logout">
+                        <button type="submit">Sair</button>
+                    </form>
+                </header>
+
+                ${mensagemErro ? `<div class="msg-erro">${mensagemErro}</div>` : ''}
+                ${mensagemSucesso ? `<div class="msg-sucesso">${mensagemSucesso}</div>` : ''}
+
+                <div class="card">
+                    <h2>Versão atual salva</h2>
+                    ${infoApk}
+                </div>
+
+                <div class="card">
+                    <h2>Enviar novo APK</h2>
+                    <form method="POST" action="/painel/upload_apk" enctype="multipart/form-data">
+                        <label style="display:block;font-size:12px;text-transform:uppercase;letter-spacing:1px;color:#8899aa;margin-bottom:6px;">versionCode</label>
+                        <input type="number" name="version_code" min="1" step="1" placeholder="ex: 14" required
+                            style="width:100%;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:12px 14px;color:#fff;font-size:15px;margin-bottom:18px;outline:none;">
+                        <div class="drop">
+                            <input type="file" name="apk" accept=".apk" required>
+                        </div>
+                        <button class="enviar" type="submit">Enviar e substituir</button>
+                    </form>
+                </div>
+            </div>
+        </body>
+        </html>
+    `;
+}
 
 app.get('/metrics', (req, res) => {
     const os = require('os');
@@ -1502,22 +1887,40 @@ app.get('/metrics', (req, res) => {
         uptime: uptimeStr
     });
 });
+let cpuAnterior = process.cpuUsage();
+let tempoAnterior = process.hrtime();
 
-app.get('/download_server', (req, res) => {
-    const fs = require('fs');
-    const path = require('path');
-    const serverPath = path.join(__dirname, 'servernd.js');
-    
-    fs.readFile(serverPath, 'utf8', (err, data) => {
-        if (err) {
-            return res.status(500).json({ erro: 'file error' });
-        }
-        res.setHeader('Content-Type', 'application/javascript');
-        res.setHeader('Content-Disposition', 'attachment; filename="servernd.js"');
-        res.send(data);
+// ========== rota que o app consulta periodicamente pra saber se tem versão nova ==========
+app.get('/verificar_atualizacao', autenticarToken, (req, res) => {
+    const versaoAtualStr = req.query.versao_atual;
+    const versaoAtual = parseInt(versaoAtualStr, 10);
+
+    if (!versaoAtualStr || !Number.isInteger(versaoAtual) || versaoAtual <= 0) {
+        return res.status(400).json({ erro: 'versao_atual (versionCode) é obrigatória e deve ser um inteiro positivo.' });
+    }
+
+    const meta = lerMetaApk();
+    if (!meta || !meta.versionCode) {
+        return res.json({ atualizacao_disponivel: false });
+    }
+
+    const temAtualizacao = meta.versionCode > versaoAtual;
+    res.json({
+        atualizacao_disponivel: temAtualizacao,
+        versao_servidor: meta.versionCode,
+        versao_enviada_pelo_app: versaoAtual
     });
 });
 
+// ========== rota que o app dos usuários vai usar pra baixar o apk (exige login normal) ==========
+app.get('/baixar_apk', autenticarToken, (req, res) => {
+    if (!fs.existsSync(CAMINHO_APK_ATUAL)) {
+        return res.status(404).json({ erro: 'Nenhum APK disponível.' });
+    }
+    res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+    res.setHeader('Content-Disposition', 'attachment; filename="app-atualizado.apk"');
+    fs.createReadStream(CAMINHO_APK_ATUAL).pipe(res);
+});
 
 app.post('/atualizar_nome', autenticarToken, async (req, res) => {
     const { nome } = req.body;
@@ -1549,7 +1952,8 @@ app.get('/get_nome', async (req, res) => {
     const { email } = req.query;
     if (!email) return res.status(400).json({ erro: "email is required." });
     
-    const emailLimpo = email.trim().toLowerCase();
+    const emailLimpo = exigirEmailPuro(email, res);
+    if (!emailLimpo) return;
     
     try {
         let usuario = await usuariosColl.findOne({ email: emailLimpo });
@@ -1577,8 +1981,13 @@ app.post('/get_nomes_lote', async (req, res) => {
     }
     
     try {
+        const emailsValidados = emails.map(validarEmailPuro);
+        if (emailsValidados.some(e => !e)) {
+            return res.status(400).json({ erro: 'A lista contém email inválido.' });
+        }
+
         const usuarios = await usuariosColl.find(
-            { email: { $in: emails.map(e => e.trim().toLowerCase()) } },
+            { email: { $in: emailsValidados } },
             { projection: { email: 1, nome_perfil: 1 } }
         ).toArray();
         
@@ -1588,7 +1997,7 @@ app.post('/get_nomes_lote', async (req, res) => {
         });
         
         emails.forEach(email => {
-            const emailLimpo = email.trim().toLowerCase();
+            const emailLimpo = validarEmailPuro(email);
             if (!resultado[emailLimpo]) resultado[emailLimpo] = emailLimpo.split('@')[0];
         });
         
@@ -1611,12 +2020,11 @@ async function varrer() {
             console.log(`🔎 Varredura encontrou ${ids.length} mensagem(ns) entregue(s)`);
             apagarComEspera(ids);
         } else {
-            // nada pra apagar agora -> espera 30s e varre de novo
             setTimeout(varrer, 30000);
         }
     } catch (erro) {
         console.error('Erro na varredura de mensagens:', erro);
-        setTimeout(varrer, 30000); // tenta de novo em 30s mesmo se der erro
+        setTimeout(varrer, 30000);
     }
 }
 
@@ -1629,21 +2037,29 @@ function apagarComEspera(ids) {
             console.error('Erro ao apagar mensagens:', erro);
         }
 
-        // só depois de apagar, chama a varredura de novo
         varrer();
     }, 30000);
 }
 
-// inicia o ciclo
 setTimeout(() => { varrer(); }, 5000);
 
-// 🔥 sem proxy Erlang neste servidor (rodando no Render como fallback) —
-// qualquer rota não reconhecida cai aqui como 404 normal.
 app.use((req, res, next) => {
+    if (req.path === '/ws') {
+        if (!proxyErlang) {
+            return res.status(503).json({ erro: 'Serviço Erlang não configurado neste servidor.' });
+        }
+        req.on('aborted', () => {
+            console.log('⚠️ Cliente abortou a requisição, ignorando resto do proxy');
+        });
+        return proxyErlang(req, res, next);
+    }
+
     res.status(404).json({ erro: 'Rota não encontrada' });
 });
 
 const PORT = process.env.PORT || 3000;
 http.listen(PORT, '0.0.0.0', () => {
     console.log(`꧁ CXCODE (Render) ✔️ rodando na porta ${PORT}`);
+    console.log(`🌐 Web: /cn.twoendtwo.html`);
+    if (!ERLANG_TARGET) console.log('ℹ️ Erlang não configurado (ERLANG_URL ausente).');
 });
