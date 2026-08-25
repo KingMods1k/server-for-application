@@ -1,1 +1,110 @@
-{404}
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
+
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+
+public class Servidor {
+
+    public static void main(String[] args) throws Exception {
+
+        HttpServer server = HttpServer.create(
+            new InetSocketAddress(8080),
+            0
+        );
+
+        server.createContext("/", Servidor::pagina);
+
+        server.start();
+
+        System.out.println("Servidor: http://localhost:8080");
+    }
+
+    static void pagina(HttpExchange exchange) throws IOException {
+
+        String html = """
+            <!DOCTYPE html>
+            <html lang="pt-BR">
+            <head>
+                <meta charset="UTF-8">
+                <title>Mensagens</title>
+
+                <style>
+                    body {
+                        margin: 0;
+                        font-family: Arial;
+                    }
+
+                    .app {
+                        display: flex;
+                        height: 100vh;
+                    }
+
+                    .contatos {
+                        width: 320px;
+                        border-right: 1px solid #ccc;
+                    }
+
+                    .contato {
+                        padding: 18px;
+                        border-bottom: 1px solid #eee;
+                    }
+
+                    .mensagens {
+                        flex: 1;
+                        padding: 25px;
+                    }
+                </style>
+            </head>
+
+            <body>
+
+                <div class="app">
+
+                    <div class="contatos">
+
+                        <h2>Contatos</h2>
+
+                        <div class="contato">João</div>
+                        <div class="contato">Maria</div>
+                        <div class="contato">Pedro</div>
+                        <div class="contato">Lucas</div>
+
+                    </div>
+
+                    <div class="mensagens">
+
+                        <h2>João</h2>
+
+                        <p>João: Oi, tudo bem?</p>
+
+                        <p>Você: Tudo sim 😎</p>
+
+                        <p>João: Vai hoje?</p>
+
+                        <p>Você: Vou sim.</p>
+
+                    </div>
+
+                </div>
+
+            </body>
+            </html>
+            """;
+
+        byte[] resposta = html.getBytes("UTF-8");
+
+        exchange.getResponseHeaders()
+                .set("Content-Type", "text/html; charset=UTF-8");
+
+        exchange.sendResponseHeaders(
+            200,
+            resposta.length
+        );
+
+        try (OutputStream output = exchange.getResponseBody()) {
+            output.write(resposta);
+        }
+    }
+}
