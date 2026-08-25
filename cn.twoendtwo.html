@@ -4,107 +4,190 @@ import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 
 public class Servidor {
 
     public static void main(String[] args) throws Exception {
 
+        int porta = 8080;
+
         HttpServer server = HttpServer.create(
-            new InetSocketAddress(8080),
-            0
+                new InetSocketAddress("0.0.0.0", porta),
+                0
         );
 
         server.createContext("/", Servidor::pagina);
 
         server.start();
 
-        System.out.println("Servidor: http://localhost:8080");
+        System.out.println("Servidor iniciado na porta " + porta);
     }
 
-    static void pagina(HttpExchange exchange) throws IOException {
+    private static void pagina(HttpExchange exchange) throws IOException {
 
         String html = """
-            <!DOCTYPE html>
-            <html lang="pt-BR">
-            <head>
-                <meta charset="UTF-8">
-                <title>Mensagens</title>
+                <!DOCTYPE html>
+                <html lang="pt-BR">
+                <head>
+                    <meta charset="UTF-8">
+                    <meta name="viewport"
+                          content="width=device-width, initial-scale=1.0">
 
-                <style>
-                    body {
-                        margin: 0;
-                        font-family: Arial;
-                    }
+                    <title>Mensagens</title>
 
-                    .app {
-                        display: flex;
-                        height: 100vh;
-                    }
+                    <style>
+                        * {
+                            box-sizing: border-box;
+                        }
 
-                    .contatos {
-                        width: 320px;
-                        border-right: 1px solid #ccc;
-                    }
+                        body {
+                            margin: 0;
+                            font-family: Arial, sans-serif;
+                            height: 100vh;
+                        }
 
-                    .contato {
-                        padding: 18px;
-                        border-bottom: 1px solid #eee;
-                    }
+                        .app {
+                            display: flex;
+                            height: 100vh;
+                        }
 
-                    .mensagens {
-                        flex: 1;
-                        padding: 25px;
-                    }
-                </style>
-            </head>
+                        .contatos {
+                            width: 320px;
+                            border-right: 1px solid #ddd;
+                            overflow-y: auto;
+                        }
 
-            <body>
+                        .titulo {
+                            padding: 20px;
+                            font-size: 22px;
+                            font-weight: bold;
+                            border-bottom: 1px solid #ddd;
+                        }
 
-                <div class="app">
+                        .contato {
+                            padding: 18px;
+                            border-bottom: 1px solid #eee;
+                            cursor: pointer;
+                        }
 
-                    <div class="contatos">
+                        .contato:hover {
+                            background: #f5f5f5;
+                        }
 
-                        <h2>Contatos</h2>
+                        .chat {
+                            flex: 1;
+                            display: flex;
+                            flex-direction: column;
+                        }
 
-                        <div class="contato">João</div>
-                        <div class="contato">Maria</div>
-                        <div class="contato">Pedro</div>
-                        <div class="contato">Lucas</div>
+                        .chat-header {
+                            padding: 20px;
+                            font-size: 20px;
+                            font-weight: bold;
+                            border-bottom: 1px solid #ddd;
+                        }
+
+                        .mensagens {
+                            flex: 1;
+                            padding: 20px;
+                            overflow-y: auto;
+                            background: #f5f5f5;
+                        }
+
+                        .mensagem {
+                            padding: 10px 14px;
+                            margin-bottom: 10px;
+                            width: fit-content;
+                            max-width: 70%;
+                            border-radius: 10px;
+                            background: white;
+                        }
+
+                        .enviada {
+                            margin-left: auto;
+                            background: #d9fdd3;
+                        }
+                    </style>
+                </head>
+
+                <body>
+
+                    <div class="app">
+
+                        <aside class="contatos">
+
+                            <div class="titulo">
+                                Contatos
+                            </div>
+
+                            <div class="contato">
+                                João
+                            </div>
+
+                            <div class="contato">
+                                Maria
+                            </div>
+
+                            <div class="contato">
+                                Pedro
+                            </div>
+
+                            <div class="contato">
+                                Lucas
+                            </div>
+
+                        </aside>
+
+
+                        <main class="chat">
+
+                            <div class="chat-header">
+                                João
+                            </div>
+
+                            <div class="mensagens">
+
+                                <div class="mensagem">
+                                    João: Oi, tudo bem?
+                                </div>
+
+                                <div class="mensagem enviada">
+                                    Você: Tudo sim 😎
+                                </div>
+
+                                <div class="mensagem">
+                                    João: Vai hoje?
+                                </div>
+
+                                <div class="mensagem enviada">
+                                    Você: Vou sim.
+                                </div>
+
+                            </div>
+
+                        </main>
 
                     </div>
 
-                    <div class="mensagens">
+                </body>
+                </html>
+                """;
 
-                        <h2>João</h2>
+        byte[] resposta = html.getBytes(StandardCharsets.UTF_8);
 
-                        <p>João: Oi, tudo bem?</p>
-
-                        <p>Você: Tudo sim 😎</p>
-
-                        <p>João: Vai hoje?</p>
-
-                        <p>Você: Vou sim.</p>
-
-                    </div>
-
-                </div>
-
-            </body>
-            </html>
-            """;
-
-        byte[] resposta = html.getBytes("UTF-8");
-
-        exchange.getResponseHeaders()
-                .set("Content-Type", "text/html; charset=UTF-8");
-
-        exchange.sendResponseHeaders(
-            200,
-            resposta.length
+        exchange.getResponseHeaders().set(
+                "Content-Type",
+                "text/html; charset=UTF-8"
         );
 
-        try (OutputStream output = exchange.getResponseBody()) {
-            output.write(resposta);
+        exchange.sendResponseHeaders(
+                200,
+                resposta.length
+        );
+
+        try (OutputStream out = exchange.getResponseBody()) {
+            out.write(resposta);
         }
     }
 }
