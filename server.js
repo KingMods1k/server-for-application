@@ -754,485 +754,987 @@ app.post('/deletar_foto', autenticarToken, async (req, res) => {
     }
 });
 
-app.post('/carts',async (req, res) => {
-    try {"<!DOCTYPE html>
+app.get('/carts', (req, res) => {
+    const html = String.raw`<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>Carro 3D — Modelo baseado na planta</title>
+
 <style>
 *{box-sizing:border-box}
-html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#090b0f;font-family:Arial,sans-serif}
-#app{position:fixed;inset:0}
-canvas{display:block}
-.hud{
-  position:fixed;left:18px;top:18px;z-index:5;
-  color:#fff;background:rgba(8,10,14,.72);
-  border:1px solid rgba(255,255,255,.12);
-  backdrop-filter:blur(12px);border-radius:14px;
-  padding:14px 16px;line-height:1.45;max-width:330px;
-  box-shadow:0 10px 30px rgba(0,0,0,.35)
+html,body{
+    margin:0;
+    width:100%;
+    height:100%;
+    overflow:hidden;
+    background:#090b0f;
+    font-family:Arial,sans-serif
 }
-.hud b{font-size:16px}.hud small{opacity:.7}
+#app{
+    position:fixed;
+    inset:0
+}
+canvas{
+    display:block
+}
+.hud{
+    position:fixed;
+    left:18px;
+    top:18px;
+    z-index:5;
+    color:#fff;
+    background:rgba(8,10,14,.72);
+    border:1px solid rgba(255,255,255,.12);
+    backdrop-filter:blur(12px);
+    border-radius:14px;
+    padding:14px 16px;
+    line-height:1.45;
+    max-width:330px;
+    box-shadow:0 10px 30px rgba(0,0,0,.35)
+}
+.hud b{font-size:16px}
+.hud small{opacity:.7}
 .controls{
-  position:fixed;right:18px;bottom:18px;z-index:5;
-  display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end
+    position:fixed;
+    right:18px;
+    bottom:18px;
+    z-index:5;
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+    justify-content:flex-end
 }
 button{
-  border:1px solid rgba(255,255,255,.14);background:rgba(15,18,24,.82);
-  color:#fff;border-radius:10px;padding:10px 12px;cursor:pointer;
-  backdrop-filter:blur(8px)
+    border:1px solid rgba(255,255,255,.14);
+    background:rgba(15,18,24,.82);
+    color:#fff;
+    border-radius:10px;
+    padding:10px 12px;
+    cursor:pointer;
+    backdrop-filter:blur(8px)
 }
-button:hover{background:rgba(35,40,50,.9)}
+button:hover{
+    background:rgba(35,40,50,.9)
+}
 .badge{
-  display:inline-block;margin-top:8px;padding:4px 7px;border-radius:6px;
-  background:rgba(255,255,255,.08);font-size:11px
+    display:inline-block;
+    margin-top:8px;
+    padding:4px 7px;
+    border-radius:6px;
+    background:rgba(255,255,255,.08);
+    font-size:11px
 }
 </style>
 </head>
+
 <body>
+
 <div id="app"></div>
 
 <div class="hud">
-  <b>Modelo 3D — carroceria</b><br>
-  <small>Proporções aproximadas da imagem de referência</small><br>
-  <span class="badge">4480 × 1950 × 1250 mm</span>
-  <span class="badge">Entre-eixos: 2475 mm</span>
-  <br><br>
-  Arraste para girar · roda do mouse para zoom · dois dedos no celular
+    <b>Modelo 3D — carroceria</b><br>
+    <small>Proporções aproximadas da imagem de referência</small><br>
+
+    <span class="badge">4480 × 1950 × 1250 mm</span>
+    <span class="badge">Entre-eixos: 2475 mm</span>
+
+    <br><br>
+
+    Arraste para girar · roda do mouse para zoom · dois dedos no celular
 </div>
 
 <div class="controls">
-  <button id="view3d">3D</button>
-  <button id="viewFront">Frente</button>
-  <button id="viewSide">Lateral</button>
-  <button id="viewTop">Superior</button>
-  <button id="shell">Carroceria</button>
+    <button id="view3d">3D</button>
+    <button id="viewFront">Frente</button>
+    <button id="viewSide">Lateral</button>
+    <button id="viewTop">Superior</button>
+    <button id="shell">Carroceria</button>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.179.1/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.179.1/examples/js/controls/OrbitControls.js"></script>
 
 <script>
+
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x090b0f);
 
-const camera = new THREE.PerspectiveCamera(38, innerWidth/innerHeight, .01, 100);
+const camera = new THREE.PerspectiveCamera(
+    38,
+    innerWidth / innerHeight,
+    .01,
+    100
+);
+
 camera.position.set(6.4,3.0,6.6);
 
-const renderer = new THREE.WebGLRenderer({antialias:true});
+const renderer = new THREE.WebGLRenderer({
+    antialias:true
+});
+
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));
 renderer.setSize(innerWidth,innerHeight);
-renderer.shadowMap.enabled=true;
-renderer.shadowMap.type=THREE.PCFSoftShadowMap;
-renderer.outputColorSpace=THREE.SRGBColorSpace;
-renderer.toneMapping=THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure=1.05;
+
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+
 document.getElementById('app').appendChild(renderer.domElement);
 
-const controls = new THREE.OrbitControls(camera,renderer.domElement);
-controls.enableDamping=true;
-controls.dampingFactor=.07;
-controls.minDistance=3.2;
-controls.maxDistance=12;
+const controls = new THREE.OrbitControls(
+    camera,
+    renderer.domElement
+);
+
+controls.enableDamping = true;
+controls.dampingFactor = .07;
+controls.minDistance = 3.2;
+controls.maxDistance = 12;
 controls.target.set(0,.75,0);
 
-/* ------------------------------
-   ESCALA
-   O modelo usa metros.
-   4.480 m x 1.950 m x 1.250 m
---------------------------------*/
-const L=4.480, W=1.950, H=1.250;
-const wheelBase=2.475;
-const frontAxle=-1.7625;
-const rearAxle=0.7125;
 
-/* iluminação */
-scene.add(new THREE.HemisphereLight(0xdfe9ff,0x20242c,2.0));
+/* ESCALA */
 
-const key=new THREE.DirectionalLight(0xffffff,3.0);
+const L = 4.480;
+const W = 1.950;
+const H = 1.250;
+
+const wheelBase = 2.475;
+
+const frontAxle = -1.7625;
+const rearAxle = 0.7125;
+
+
+/* ILUMINAÇÃO */
+
+scene.add(
+    new THREE.HemisphereLight(
+        0xdfe9ff,
+        0x20242c,
+        2.0
+    )
+);
+
+const key = new THREE.DirectionalLight(
+    0xffffff,
+    3.0
+);
+
 key.position.set(-4,7,5);
-key.castShadow=true;
+key.castShadow = true;
 key.shadow.mapSize.set(2048,2048);
+
 scene.add(key);
 
-const fill=new THREE.DirectionalLight(0x9db8ff,1.2);
+const fill = new THREE.DirectionalLight(
+    0x9db8ff,
+    1.2
+);
+
 fill.position.set(5,3,-5);
+
 scene.add(fill);
 
-/* chão */
-const floor=new THREE.Mesh(
-  new THREE.CircleGeometry(12,96),
-  new THREE.MeshStandardMaterial({color:0x11151b,roughness:.82,metalness:.05})
+
+/* CHÃO */
+
+const floor = new THREE.Mesh(
+    new THREE.CircleGeometry(12,96),
+    new THREE.MeshStandardMaterial({
+        color:0x11151b,
+        roughness:.82,
+        metalness:.05
+    })
 );
-floor.rotation.x=-Math.PI/2;
-floor.position.y=.02;
-floor.receiveShadow=true;
+
+floor.rotation.x = -Math.PI/2;
+floor.position.y = .02;
+floor.receiveShadow = true;
+
 scene.add(floor);
 
-/* ------------------------------
-   materiais
---------------------------------*/
-const bodyMat=new THREE.MeshPhysicalMaterial({
-  color:0x7c8791,metalness:.78,roughness:.24,
-  clearcoat:.65,clearcoatRoughness:.16
-});
-const darkMat=new THREE.MeshStandardMaterial({
-  color:0x090b0e,metalness:.25,roughness:.38
-});
-const glassMat=new THREE.MeshPhysicalMaterial({
-  color:0x101821,metalness:.15,roughness:.08,
-  transmission:.08,transparent:true,opacity:.86
-});
-const rubberMat=new THREE.MeshStandardMaterial({
-  color:0x050505,roughness:.72,metalness:.05
-});
-const rimMat=new THREE.MeshStandardMaterial({
-  color:0x9da4ad,metalness:.92,roughness:.18
-});
-const lampMat=new THREE.MeshPhysicalMaterial({
-  color:0xe9f5ff,emissive:0xbad8ff,emissiveIntensity:2.2,
-  roughness:.12,metalness:.05
-});
-const redLampMat=new THREE.MeshPhysicalMaterial({
-  color:0x6b0000,emissive:0x610000,emissiveIntensity:2,
-  roughness:.18
+
+/* MATERIAIS */
+
+const bodyMat = new THREE.MeshPhysicalMaterial({
+    color:0x7c8791,
+    metalness:.78,
+    roughness:.24,
+    clearcoat:.65,
+    clearcoatRoughness:.16
 });
 
-/* grupo principal */
-const car=new THREE.Group();
+const darkMat = new THREE.MeshStandardMaterial({
+    color:0x090b0e,
+    metalness:.25,
+    roughness:.38
+});
+
+const glassMat = new THREE.MeshPhysicalMaterial({
+    color:0x101821,
+    metalness:.15,
+    roughness:.08,
+    transmission:.08,
+    transparent:true,
+    opacity:.86
+});
+
+const rubberMat = new THREE.MeshStandardMaterial({
+    color:0x050505,
+    roughness:.72,
+    metalness:.05
+});
+
+const rimMat = new THREE.MeshStandardMaterial({
+    color:0x9da4ad,
+    metalness:.92,
+    roughness:.18
+});
+
+const lampMat = new THREE.MeshPhysicalMaterial({
+    color:0xe9f5ff,
+    emissive:0xbad8ff,
+    emissiveIntensity:2.2,
+    roughness:.12,
+    metalness:.05
+});
+
+const redLampMat = new THREE.MeshPhysicalMaterial({
+    color:0x6b0000,
+    emissive:0x610000,
+    emissiveIntensity:2,
+    roughness:.18
+});
+
+
+/* GRUPO DO CARRO */
+
+const car = new THREE.Group();
+
 scene.add(car);
 
-/* ------------------------------
-   Loft: cria uma carroceria
-   através de várias seções.
---------------------------------*/
-function loft(sections, material, yOffset=0){
-  const verts=[], indices=[];
-  /*
-    Cada seção:
-    [x, halfWidth, bottomY, shoulderY, roofY]
-    As 8 posições formam um contorno transversal.
-  */
-  for(const s of sections){
-    const [x,hw,bottom,shoulder,roof]=s;
-    const pts=[
-      [x,bottom,0],
-      [x,bottom+.08, hw*.72],
-      [x,shoulder-.12,hw],
-      [x,shoulder,hw*.78],
-      [x,roof,hw*.40],
-      [x,roof+.02,0],
-      [x,roof,-hw*.40],
-      [x,shoulder,-hw*.78],
-      [x,shoulder-.12,-hw]
-    ];
-    for(const p of pts) verts.push(...p);
-  }
-  const n=9;
-  for(let i=0;i<sections.length-1;i++){
-    for(let j=0;j<n;j++){
-      const a=i*n+j, b=i*n+(j+1)%n;
-      const c=(i+1)*n+(j+1)%n, d=(i+1)*n+j;
-      indices.push(a,b,d,b,c,d);
+
+/* LOFT DA CARROCERIA */
+
+function loft(sections, material){
+
+    const verts = [];
+    const indices = [];
+
+    for(const s of sections){
+
+        const [
+            x,
+            hw,
+            bottom,
+            shoulder,
+            roof
+        ] = s;
+
+        const pts = [
+
+            [x,bottom,0],
+
+            [x,bottom+.08,hw*.72],
+
+            [x,shoulder-.12,hw],
+
+            [x,shoulder,hw*.78],
+
+            [x,roof,hw*.40],
+
+            [x,roof+.02,0],
+
+            [x,roof,-hw*.40],
+
+            [x,shoulder,-hw*.78],
+
+            [x,shoulder-.12,-hw]
+
+        ];
+
+        for(const p of pts){
+            verts.push(...p);
+        }
     }
-  }
-  const g=new THREE.BufferGeometry();
-  g.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));
-  g.setIndex(indices);
-  g.computeVertexNormals();
-  const m=new THREE.Mesh(g,material);
-  m.castShadow=true;m.receiveShadow=true;
-  car.add(m);
-  return m;
+
+    const n = 9;
+
+    for(
+        let i=0;
+        i<sections.length-1;
+        i++
+    ){
+
+        for(
+            let j=0;
+            j<n;
+            j++
+        ){
+
+            const a = i*n+j;
+            const b = i*n+(j+1)%n;
+            const c = (i+1)*n+(j+1)%n;
+            const d = (i+1)*n+j;
+
+            indices.push(
+                a,b,d,
+                b,c,d
+            );
+        }
+    }
+
+    const g = new THREE.BufferGeometry();
+
+    g.setAttribute(
+        'position',
+        new THREE.Float32BufferAttribute(
+            verts,
+            3
+        )
+    );
+
+    g.setIndex(indices);
+    g.computeVertexNormals();
+
+    const m = new THREE.Mesh(
+        g,
+        material
+    );
+
+    m.castShadow = true;
+    m.receiveShadow = true;
+
+    car.add(m);
+
+    return m;
 }
 
-/*
-  Perfis inspirados diretamente nas vistas:
-  frente longa/baixa, cabine recuada,
-  teto baixo e traseira curta.
-*/
+
 loft([
- [-2.240,.78,.50,.88,.93],
- [-2.12,.90,.48,.94,1.00],
- [-1.85,.975,.47,1.00,1.08],
- [-1.60,.975,.46,1.02,1.12],
- [-1.35,.975,.46,1.00,1.17],
- [-1.05,.975,.46,1.00,1.25],
- [-.72,.965,.46,1.02,1.25],
- [-.40,.94,.46,1.03,1.25],
- [-.05,.92,.46,1.04,1.25],
- [.32,.90,.46,1.04,1.22],
- [.68,.89,.46,1.02,1.16],
- [1.02,.88,.46,1.00,1.09],
- [1.35,.86,.46,.98,1.04],
- [1.68,.82,.47,.94,.99],
- [2.00,.78,.48,.90,.94],
- [2.20,.70,.50,.85,.90],
- [2.24,.62,.52,.82,.88]
+
+    [-2.240,.78,.50,.88,.93],
+    [-2.12,.90,.48,.94,1.00],
+    [-1.85,.975,.47,1.00,1.08],
+    [-1.60,.975,.46,1.02,1.12],
+    [-1.35,.975,.46,1.00,1.17],
+    [-1.05,.975,.46,1.00,1.25],
+    [-.72,.965,.46,1.02,1.25],
+    [-.40,.94,.46,1.03,1.25],
+    [-.05,.92,.46,1.04,1.25],
+    [.32,.90,.46,1.04,1.22],
+    [.68,.89,.46,1.02,1.16],
+    [1.02,.88,.46,1.00,1.09],
+    [1.35,.86,.46,.98,1.04],
+    [1.68,.82,.47,.94,.99],
+    [2.00,.78,.48,.90,.94],
+    [2.20,.70,.50,.85,.90],
+    [2.24,.62,.52,.82,.88]
+
 ],bodyMat);
 
-/* saia inferior */
-const skirt=new THREE.Mesh(
-  new THREE.BoxGeometry(3.72,.16,1.82),
-  bodyMat
+
+/* SAIA */
+
+const skirt = new THREE.Mesh(
+    new THREE.BoxGeometry(
+        3.72,
+        .16,
+        1.82
+    ),
+    bodyMat
 );
+
 skirt.position.set(.10,.48,0);
-skirt.castShadow=true;
+skirt.castShadow = true;
+
 car.add(skirt);
 
-/* capô */
-const hood=new THREE.Mesh(
-  new THREE.BoxGeometry(1.22,.11,1.68),
-  bodyMat
+
+/* CAPÔ */
+
+const hood = new THREE.Mesh(
+    new THREE.BoxGeometry(
+        1.22,
+        .11,
+        1.68
+    ),
+    bodyMat
 );
+
 hood.position.set(-1.52,1.01,0);
-hood.rotation.z=-.018;
-hood.castShadow=true;
+hood.rotation.z = -.018;
+hood.castShadow = true;
+
 car.add(hood);
 
-/* porta esquerda/direita */
+
+/* PORTAS */
+
 function addDoor(z){
-  const d=new THREE.Mesh(
-    new THREE.BoxGeometry(1.48,.64,.035),bodyMat
-  );
-  d.position.set(-.12,z,.75*(z>0?1:-1));
-  d.rotation.x=0;
-  d.rotation.z=-.015;
-  d.scale.z=.001;
-  // placa plana visual na lateral
-  const panel=new THREE.Mesh(
-    new THREE.BoxGeometry(1.48,.64,.025),bodyMat
-  );
-  panel.position.set(-.12,.77,z);
-  panel.castShadow=true;
-  car.add(panel);
+
+    const panel = new THREE.Mesh(
+        new THREE.BoxGeometry(
+            1.48,
+            .64,
+            .025
+        ),
+        bodyMat
+    );
+
+    panel.position.set(
+        -.12,
+        .77,
+        z
+    );
+
+    panel.castShadow = true;
+
+    car.add(panel);
 }
+
 addDoor(.93);
 addDoor(-.93);
 
-/* cabine: vidro + pilares */
-const cabin=new THREE.Group();
+
+/* CABINE */
+
+const cabin = new THREE.Group();
+
 car.add(cabin);
 
-const windshield=new THREE.Mesh(
-  new THREE.BoxGeometry(.62,.48,1.72),glassMat
+
+/* PARA-BRISA */
+
+const windshield = new THREE.Mesh(
+    new THREE.BoxGeometry(
+        .62,
+        .48,
+        1.72
+    ),
+    glassMat
 );
-windshield.position.set(-.67,1.27,0);
-windshield.rotation.z=-.18;
+
+windshield.position.set(
+    -.67,
+    1.27,
+    0
+);
+
+windshield.rotation.z = -.18;
+
 cabin.add(windshield);
 
-const rearGlass=new THREE.Mesh(
-  new THREE.BoxGeometry(.75,.42,1.66),glassMat
+
+/* VIDRO TRASEIRO */
+
+const rearGlass = new THREE.Mesh(
+    new THREE.BoxGeometry(
+        .75,
+        .42,
+        1.66
+    ),
+    glassMat
 );
-rearGlass.position.set(.55,1.27,0);
-rearGlass.rotation.z=.24;
+
+rearGlass.position.set(
+    .55,
+    1.27,
+    0
+);
+
+rearGlass.rotation.z = .24;
+
 cabin.add(rearGlass);
 
-const roof=new THREE.Mesh(
-  new THREE.BoxGeometry(1.42,.10,1.72),bodyMat
+
+/* TETO */
+
+const roof = new THREE.Mesh(
+    new THREE.BoxGeometry(
+        1.42,
+        .10,
+        1.72
+    ),
+    bodyMat
 );
-roof.position.set(-.02,1.50,0);
-roof.rotation.z=.025;
+
+roof.position.set(
+    -.02,
+    1.50,
+    0
+);
+
+roof.rotation.z = .025;
+
 cabin.add(roof);
 
-/* colunas A/B/C */
+
+/* PILARES */
+
 for(const x of [-.78,.03,.68]){
-  for(const z of [-.89,.89]){
-    const p=new THREE.Mesh(
-      new THREE.BoxGeometry(.10,.58,.075),bodyMat
-    );
-    p.position.set(x,1.29,z);
-    p.rotation.z=x<0?-0.12:.12;
-    cabin.add(p);
-  }
+
+    for(const z of [-.89,.89]){
+
+        const p = new THREE.Mesh(
+            new THREE.BoxGeometry(
+                .10,
+                .58,
+                .075
+            ),
+            bodyMat
+        );
+
+        p.position.set(
+            x,
+            1.29,
+            z
+        );
+
+        p.rotation.z =
+            x < 0 ? -.12 : .12;
+
+        cabin.add(p);
+    }
 }
 
-/* teto central escuro, inspirado no desenho */
-const roofGlass=new THREE.Mesh(
-  new THREE.BoxGeometry(1.22,.025,1.22),
-  darkMat
+
+/* TETO ESCURO */
+
+const roofGlass = new THREE.Mesh(
+    new THREE.BoxGeometry(
+        1.22,
+        .025,
+        1.22
+    ),
+    darkMat
 );
-roofGlass.position.set(.03,1.555,0);
-roofGlass.rotation.z=.025;
+
+roofGlass.position.set(
+    .03,
+    1.555,
+    0
+);
+
+roofGlass.rotation.z = .025;
+
 cabin.add(roofGlass);
 
-/* ------------------------------
-   rodas
---------------------------------*/
-const wheels=[];
+
+/* RODAS */
+
+const wheels = [];
+
 function makeWheel(x,z){
-  const g=new THREE.Group();
-  g.position.set(x,.53,z);
 
-  const tire=new THREE.Mesh(
-    new THREE.CylinderGeometry(.345,.345,.22,48),
-    rubberMat
-  );
-  tire.rotation.x=Math.PI/2;
-  tire.castShadow=true;
-  g.add(tire);
+    const g = new THREE.Group();
 
-  const rim=new THREE.Mesh(
-    new THREE.CylinderGeometry(.205,.205,.235,32),
-    rimMat
-  );
-  rim.rotation.x=Math.PI/2;
-  g.add(rim);
-
-  const hub=new THREE.Mesh(
-    new THREE.CylinderGeometry(.075,.075,.245,20),
-    darkMat
-  );
-  hub.rotation.x=Math.PI/2;
-  g.add(hub);
-
-  for(let i=0;i<5;i++){
-    const spoke=new THREE.Mesh(
-      new THREE.BoxGeometry(.025,.18,.03),rimMat
+    g.position.set(
+        x,
+        .53,
+        z
     );
-    spoke.position.z=.125;
-    spoke.rotation.z=i*Math.PI*2/5;
-    g.add(spoke);
-  }
 
-  car.add(g); wheels.push(g);
+
+    const tire = new THREE.Mesh(
+        new THREE.CylinderGeometry(
+            .345,
+            .345,
+            .22,
+            48
+        ),
+        rubberMat
+    );
+
+    tire.rotation.x = Math.PI/2;
+    tire.castShadow = true;
+
+    g.add(tire);
+
+
+    const rim = new THREE.Mesh(
+        new THREE.CylinderGeometry(
+            .205,
+            .205,
+            .235,
+            32
+        ),
+        rimMat
+    );
+
+    rim.rotation.x = Math.PI/2;
+
+    g.add(rim);
+
+
+    const hub = new THREE.Mesh(
+        new THREE.CylinderGeometry(
+            .075,
+            .075,
+            .245,
+            20
+        ),
+        darkMat
+    );
+
+    hub.rotation.x = Math.PI/2;
+
+    g.add(hub);
+
+
+    for(let i=0;i<5;i++){
+
+        const spoke = new THREE.Mesh(
+            new THREE.BoxGeometry(
+                .025,
+                .18,
+                .03
+            ),
+            rimMat
+        );
+
+        spoke.position.z = .125;
+
+        spoke.rotation.z =
+            i*Math.PI*2/5;
+
+        g.add(spoke);
+    }
+
+
+    car.add(g);
+
+    wheels.push(g);
 }
+
+
 makeWheel(frontAxle,.92);
 makeWheel(frontAxle,-.92);
 makeWheel(rearAxle,.92);
 makeWheel(rearAxle,-.92);
 
-/* arcos das caixas de roda */
-function wheelArch(x,z){
-  const torus=new THREE.Mesh(
-    new THREE.TorusGeometry(.39,.045,12,40,Math.PI),
-    darkMat
-  );
-  torus.position.set(x,.67,z);
-  torus.rotation.set(0,Math.PI/2,0);
-  car.add(torus);
-}
-wheelArch(frontAxle,.935); wheelArch(frontAxle,-.935);
-wheelArch(rearAxle,.935); wheelArch(rearAxle,-.935);
 
-/* para-choque dianteiro */
-const frontBumper=new THREE.Mesh(
-  new THREE.BoxGeometry(.16,.32,1.76),bodyMat
+/* ARCOS DAS RODAS */
+
+function wheelArch(x,z){
+
+    const torus = new THREE.Mesh(
+        new THREE.TorusGeometry(
+            .39,
+            .045,
+            12,
+            40,
+            Math.PI
+        ),
+        darkMat
+    );
+
+    torus.position.set(
+        x,
+        .67,
+        z
+    );
+
+    torus.rotation.set(
+        0,
+        Math.PI/2,
+        0
+    );
+
+    car.add(torus);
+}
+
+
+wheelArch(frontAxle,.935);
+wheelArch(frontAxle,-.935);
+wheelArch(rearAxle,.935);
+wheelArch(rearAxle,-.935);
+
+
+/* PARA-CHOQUE DIANTEIRO */
+
+const frontBumper = new THREE.Mesh(
+    new THREE.BoxGeometry(
+        .16,
+        .32,
+        1.76
+    ),
+    bodyMat
 );
-frontBumper.position.set(-2.18,.69,0);
-frontBumper.castShadow=true;
+
+frontBumper.position.set(
+    -2.18,
+    .69,
+    0
+);
+
+frontBumper.castShadow = true;
+
 car.add(frontBumper);
 
-/* grade */
-const grille=new THREE.Mesh(
-  new THREE.BoxGeometry(.035,.24,.82),darkMat
+
+/* GRADE */
+
+const grille = new THREE.Mesh(
+    new THREE.BoxGeometry(
+        .035,
+        .24,
+        .82
+    ),
+    darkMat
 );
-grille.position.set(-2.265,.70,0);
+
+grille.position.set(
+    -2.265,
+    .70,
+    0
+);
+
 car.add(grille);
 
-/* traseira */
-const rearBumper=new THREE.Mesh(
-  new THREE.BoxGeometry(.14,.30,1.70),bodyMat
+
+/* PARA-CHOQUE TRASEIRO */
+
+const rearBumper = new THREE.Mesh(
+    new THREE.BoxGeometry(
+        .14,
+        .30,
+        1.70
+    ),
+    bodyMat
 );
-rearBumper.position.set(2.15,.67,0);
-rearBumper.castShadow=true;
+
+rearBumper.position.set(
+    2.15,
+    .67,
+    0
+);
+
+rearBumper.castShadow = true;
+
 car.add(rearBumper);
 
-/* faróis */
+
+/* FARÓIS */
+
 for(const z of [-.53,.53]){
-  const lamp=new THREE.Mesh(
-    new THREE.BoxGeometry(.035,.20,.38),lampMat
-  );
-  lamp.position.set(-2.27,.91,z);
-  car.add(lamp);
+
+    const lamp = new THREE.Mesh(
+        new THREE.BoxGeometry(
+            .035,
+            .20,
+            .38
+        ),
+        lampMat
+    );
+
+    lamp.position.set(
+        -2.27,
+        .91,
+        z
+    );
+
+    car.add(lamp);
 }
 
-/* lanternas */
+
+/* LANTERNAS */
+
 for(const z of [-.56,.56]){
-  const lamp=new THREE.Mesh(
-    new THREE.BoxGeometry(.04,.19,.34),redLampMat
-  );
-  lamp.position.set(2.22,.90,z);
-  car.add(lamp);
+
+    const lamp = new THREE.Mesh(
+        new THREE.BoxGeometry(
+            .04,
+            .19,
+            .34
+        ),
+        redLampMat
+    );
+
+    lamp.position.set(
+        2.22,
+        .90,
+        z
+    );
+
+    car.add(lamp);
 }
 
-/* escapamentos */
+
+/* ESCAPAMENTOS */
+
 for(const z of [-.42,.42]){
-  const ex=new THREE.Mesh(
-    new THREE.CylinderGeometry(.07,.07,.18,20),
-    darkMat
-  );
-  ex.rotation.z=Math.PI/2;
-  ex.position.set(2.25,.51,z);
-  car.add(ex);
+
+    const ex = new THREE.Mesh(
+        new THREE.CylinderGeometry(
+            .07,
+            .07,
+            .18,
+            20
+        ),
+        darkMat
+    );
+
+    ex.rotation.z = Math.PI/2;
+
+    ex.position.set(
+        2.25,
+        .51,
+        z
+    );
+
+    car.add(ex);
 }
 
-/* maçanetas */
+
+/* MAÇANETAS */
+
 for(const z of [-.985,.985]){
-  const h=new THREE.Mesh(
-    new THREE.BoxGeometry(.25,.035,.025),
-    darkMat
-  );
-  h.position.set(-.12,.98,z);
-  car.add(h);
+
+    const h = new THREE.Mesh(
+        new THREE.BoxGeometry(
+            .25,
+            .035,
+            .025
+        ),
+        darkMat
+    );
+
+    h.position.set(
+        -.12,
+        .98,
+        z
+    );
+
+    car.add(h);
 }
 
-/* ------------------------------
-   linhas de referência no chão
---------------------------------*/
-const grid=new THREE.GridHelper(12,24,0x242a33,0x171b21);
-grid.position.y=.025;
+
+/* GRID */
+
+const grid = new THREE.GridHelper(
+    12,
+    24,
+    0x242a33,
+    0x171b21
+);
+
+grid.position.y = .025;
+
 scene.add(grid);
 
-/* eixos discretos */
-const axisGroup=new THREE.Group();
-scene.add(axisGroup);
 
-/* ------------------------------
-   câmeras
---------------------------------*/
+/* CÂMERAS */
+
 function setView(pos,target){
-  camera.position.set(...pos);
-  controls.target.set(...target);
-  controls.update();
-}
-document.getElementById('view3d').onclick=()=>setView([6.4,3,6.6],[0,.8,0]);
-document.getElementById('viewFront').onclick=()=>setView([-6.3,1.25,0],[0,.75,0]);
-document.getElementById('viewSide').onclick=()=>setView([0,1.45,7.2],[0,.8,0]);
-document.getElementById('viewTop').onclick=()=>setView([0,7.5,0.01],[0,0,0]);
 
-let shellMode=false;
-document.getElementById('shell').onclick=()=>{
-  shellMode=!shellMode;
-  bodyMat.color.set(shellMode?0x9aa1a8:0x7c8791);
-  bodyMat.metalness=shellMode?.48:.78;
-  bodyMat.roughness=shellMode?.48:.24;
-  document.getElementById('shell').textContent=shellMode?'Acabamento':'Carroceria';
+    camera.position.set(...pos);
+
+    controls.target.set(...target);
+
+    controls.update();
+}
+
+
+document.getElementById('view3d').onclick =
+    () => setView(
+        [6.4,3,6.6],
+        [0,.8,0]
+    );
+
+
+document.getElementById('viewFront').onclick =
+    () => setView(
+        [-6.3,1.25,0],
+        [0,.75,0]
+    );
+
+
+document.getElementById('viewSide').onclick =
+    () => setView(
+        [0,1.45,7.2],
+        [0,.8,0]
+    );
+
+
+document.getElementById('viewTop').onclick =
+    () => setView(
+        [0,7.5,0.01],
+        [0,0,0]
+    );
+
+
+/* MODO CARROCERIA */
+
+let shellMode = false;
+
+document.getElementById('shell').onclick = () => {
+
+    shellMode = !shellMode;
+
+    bodyMat.color.set(
+        shellMode
+            ? 0x9aa1a8
+            : 0x7c8791
+    );
+
+    bodyMat.metalness =
+        shellMode ? .48 : .78;
+
+    bodyMat.roughness =
+        shellMode ? .48 : .24;
+
+    document.getElementById('shell').textContent =
+        shellMode
+            ? 'Acabamento'
+            : 'Carroceria';
 };
 
-/* ------------------------------
-   animação
---------------------------------*/
+
+/* ANIMAÇÃO */
+
 function animate(){
-  requestAnimationFrame(animate);
-  controls.update();
-  renderer.render(scene,camera);
+
+    requestAnimationFrame(animate);
+
+    controls.update();
+
+    renderer.render(
+        scene,
+        camera
+    );
 }
+
 animate();
 
+
+/* RESIZE */
+
 addEventListener('resize',()=>{
-  camera.aspect=innerWidth/innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth,innerHeight);
+
+    camera.aspect =
+        innerWidth/innerHeight;
+
+    camera.updateProjectionMatrix();
+
+    renderer.setSize(
+        innerWidth,
+        innerHeight
+    );
+
 });
+
 </script>
+
 </body>
-</html>
-"} catch (erro) {
-        res.status(500).json({ erro: "Error renderizing" });
-    }
+</html>`;
+
+    res.type('html').send(html);
 });
 
  app.get('/chave_publica_atual', autenticarToken, async (req, res) => {
