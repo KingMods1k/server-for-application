@@ -1059,7 +1059,8 @@ const bodyMat =
         metalness: 0.78,
         roughness: 0.24,
         clearcoat: 0.65,
-        clearcoatRoughness: 0.16
+        clearcoatRoughness: 0.16,
+        side: THREE.DoubleSide
     });
 
 
@@ -1078,7 +1079,8 @@ const glassMat =
         roughness: 0.08,
         transmission: 0.08,
         transparent: true,
-        opacity: 0.86
+        opacity: 0.86,
+        side: THREE.DoubleSide
     });
 
 
@@ -1125,12 +1127,21 @@ const car =
 scene.add(car);
 
 
-/* CARROCERIA */
+/*
+   CARROCERIA — malha contínua (loft)
+   Cada seção: [x, halfWidth, bottomY, shoulderY, roofY, hasCabin]
+   hasCabin=0 nas seções de capô/traseira baixa (sem "teto"), 1 na cabine.
+   O perfil segue o blueprint: capô baixo até ~-0.6, cabine entre -0.6 e 0.9,
+   traseira caindo suavemente até o para-choque.
+*/
 
 function loft(sections, material) {
 
     const verts = [];
+    const uvs = [];
     const indices = [];
+
+    const n = 13;
 
     for (const s of sections) {
 
@@ -1142,34 +1153,37 @@ function loft(sections, material) {
             roof
         ] = s;
 
+        // perfil da secção transversal (13 pontos), sentido horário
         const pts = [
 
             [x, bottom, 0],
-
-            [x, bottom + .08, hw * .72],
-
-            [x, shoulder - .12, hw],
-
-            [x, shoulder, hw * .78],
-
-            [x, roof, hw * .40],
-
-            [x, roof + .02, 0],
-
-            [x, roof, -hw * .40],
-
-            [x, shoulder, -hw * .78],
-
-            [x, shoulder - .12, -hw]
+            [x, bottom + .05, hw * .55],
+            [x, bottom + .16, hw * .82],
+            [x, shoulder - .22, hw * .97],
+            [x, shoulder - .06, hw],
+            [x, shoulder + .05, hw * .93],
+            [x, roof, hw * .34],
+            [x, roof + .015, hw * .10],
+            [x, roof + .015, -hw * .10],
+            [x, roof, -hw * .34],
+            [x, shoulder + .05, -hw * .93],
+            [x, shoulder - .06, -hw],
+            [x, shoulder - .22, -hw * .97]
 
         ];
 
+        // fecha o laço duplicando um ponto adicional para casar com bottom*.82 do outro lado
+        pts.push([x, bottom + .16, -hw * .82]);
+        pts.push([x, bottom + .05, -hw * .55]);
+
         for (const p of pts) {
             verts.push(...p);
+            uvs.push(0, 0);
         }
     }
 
-    const n = 9;
+    const ptsPerSection =
+        sections.length ? 15 : 0;
 
     for (
         let i = 0;
@@ -1179,22 +1193,23 @@ function loft(sections, material) {
 
         for (
             let j = 0;
-            j < n;
+            j < ptsPerSection;
             j++
         ) {
 
             const a =
-                i * n + j;
+                i * ptsPerSection + j;
 
             const b =
-                i * n + (j + 1) % n;
+                i * ptsPerSection +
+                (j + 1) % ptsPerSection;
 
             const c =
-                (i + 1) * n +
-                (j + 1) % n;
+                (i + 1) * ptsPerSection +
+                (j + 1) % ptsPerSection;
 
             const d =
-                (i + 1) * n + j;
+                (i + 1) * ptsPerSection + j;
 
             indices.push(
                 a, b, d,
@@ -1211,6 +1226,14 @@ function loft(sections, material) {
         new THREE.Float32BufferAttribute(
             verts,
             3
+        )
+    );
+
+    geometry.setAttribute(
+        'uv',
+        new THREE.Float32BufferAttribute(
+            uvs,
+            2
         )
     );
 
@@ -1233,230 +1256,148 @@ function loft(sections, material) {
 }
 
 
+/*
+   Seções longitudinais (x vai da frente -2.24 até a traseira 2.24)
+   [x, halfWidth, bottom, shoulder, roof]
+*/
+
 loft([
 
-    [-2.240,.78,.50,.88,.93],
-    [-2.12,.90,.48,.94,1.00],
-    [-1.85,.975,.47,1.00,1.08],
-    [-1.60,.975,.46,1.02,1.12],
-    [-1.35,.975,.46,1.00,1.17],
-    [-1.05,.975,.46,1.00,1.25],
-    [-.72,.965,.46,1.02,1.25],
-    [-.40,.94,.46,1.03,1.25],
-    [-.05,.92,.46,1.04,1.25],
-    [.32,.90,.46,1.04,1.22],
-    [.68,.89,.46,1.02,1.16],
-    [1.02,.88,.46,1.00,1.09],
-    [1.35,.86,.46,.98,1.04],
-    [1.68,.82,.47,.94,.99],
-    [2.00,.78,.48,.90,.94],
-    [2.20,.70,.50,.85,.90],
-    [2.24,.62,.52,.82,.88]
+    // frente / para-choque
+    [-2.24, .74, .50, .82, .84],
+    [-2.16, .86, .48, .87, .90],
+
+    // capô
+    [-1.95, .93, .47, .90, .965],
+    [-1.70, .95, .465, .92, .985],
+    [-1.45, .955, .46, .93, .995],
+
+    // base do para-brisa
+    [-1.15, .955, .46, .935, 1.02],
+
+    // pilar-A / início da cabine (sobe para o teto)
+    [-.85, .95, .46, .95, 1.34],
+
+    // teto — trecho reto do cupê
+    [-.55, .945, .455, .955, 1.40],
+    [-.15, .94, .45, .96, 1.415],
+    [.25, .935, .45, .965, 1.405],
+
+    // pilar-C / início da queda traseira
+    [.62, .92, .455, .965, 1.28],
+
+    // traseira descendo
+    [.95, .90, .46, .96, 1.06],
+    [1.30, .88, .465, .945, .96],
+    [1.62, .84, .475, .92, .90],
+    [1.92, .79, .49, .88, .86],
+
+    // para-choque traseiro
+    [2.16, .72, .51, .83, .82],
+    [2.24, .60, .53, .78, .78]
 
 ], bodyMat);
 
 
-/* SAIA */
-
-const skirt =
-    new THREE.Mesh(
-        new THREE.BoxGeometry(
-            3.72,
-            .16,
-            1.82
-        ),
-        bodyMat
-    );
-
-skirt.position.set(
-    .10,
-    .48,
-    0
-);
-
-skirt.castShadow = true;
-
-car.add(skirt);
-
-
-/* CAPÔ */
-
-const hood =
-    new THREE.Mesh(
-        new THREE.BoxGeometry(
-            1.22,
-            .11,
-            1.68
-        ),
-        bodyMat
-    );
-
-hood.position.set(
-    -1.52,
-    1.01,
-    0
-);
-
-hood.rotation.z = -.018;
-
-car.add(hood);
-
-
-/* PORTAS */
-
-function addDoor(z) {
-
-    const panel =
-        new THREE.Mesh(
-            new THREE.BoxGeometry(
-                1.48,
-                .64,
-                .025
-            ),
-            bodyMat
-        );
-
-    panel.position.set(
-        -.12,
-        .77,
-        z
-    );
-
-    panel.castShadow = true;
-
-    car.add(panel);
-}
-
-addDoor(.93);
-addDoor(-.93);
-
-
-/* CABINE */
-
-const cabin =
-    new THREE.Group();
-
-car.add(cabin);
-
-
-/* PARA-BRISA */
+/* PARA-BRISA (vidro, levemente recuado em relação ao pilar-A) */
 
 const windshield =
     new THREE.Mesh(
-        new THREE.BoxGeometry(
+        new THREE.PlaneGeometry(
             .62,
-            .48,
-            1.72
+            1.55
         ),
         glassMat
     );
 
 windshield.position.set(
-    -.67,
-    1.27,
+    -1.00,
+    1.18,
     0
 );
 
-windshield.rotation.z =
-    -.18;
+windshield.rotation.y =
+    Math.PI / 2;
 
-cabin.add(windshield);
+windshield.rotation.x =
+    -0.42;
+
+car.add(windshield);
 
 
 /* VIDRO TRASEIRO */
 
 const rearGlass =
     new THREE.Mesh(
-        new THREE.BoxGeometry(
-            .75,
-            .42,
-            1.66
+        new THREE.PlaneGeometry(
+            .70,
+            1.5
         ),
         glassMat
     );
 
 rearGlass.position.set(
-    .55,
-    1.27,
+    .78,
+    1.17,
     0
 );
 
-rearGlass.rotation.z =
-    .24;
+rearGlass.rotation.y =
+    Math.PI / 2;
 
-cabin.add(rearGlass);
+rearGlass.rotation.x =
+    0.5;
 
-
-/* TETO */
-
-const roof =
-    new THREE.Mesh(
-        new THREE.BoxGeometry(
-            1.42,
-            .10,
-            1.72
-        ),
-        bodyMat
-    );
-
-roof.position.set(
-    -.02,
-    1.50,
-    0
-);
-
-cabin.add(roof);
+car.add(rearGlass);
 
 
-/* PILARES */
+/* VIDROS LATERAIS (janelas da cabine) */
 
-for (const x of [-.78, .03, .68]) {
+for (const side of [1, -1]) {
 
-    for (const z of [-.89, .89]) {
-
-        const p =
-            new THREE.Mesh(
-                new THREE.BoxGeometry(
-                    .10,
-                    .58,
-                    .075
-                ),
-                bodyMat
-            );
-
-        p.position.set(
-            x,
-            1.29,
-            z
+    const sideGlass =
+        new THREE.Mesh(
+            new THREE.PlaneGeometry(
+                1.55,
+                .40
+            ),
+            glassMat
         );
 
-        p.rotation.z =
-            x < 0 ? -.12 : .12;
+    sideGlass.position.set(
+        -.15,
+        1.28,
+        side * .955
+    );
 
-        cabin.add(p);
-    }
+    sideGlass.rotation.y =
+        side > 0 ? 0 : Math.PI;
+
+    car.add(sideGlass);
 }
 
 
-/* TETO DE VIDRO */
+/* TETO DE VIDRO (opcional, sutil, sobre o teto) */
 
 const roofGlass =
     new THREE.Mesh(
-        new THREE.BoxGeometry(
-            1.22,
-            .025,
-            1.22
+        new THREE.PlaneGeometry(
+            1.05,
+            1.0
         ),
         darkMat
     );
 
+roofGlass.rotation.x =
+    -Math.PI / 2;
+
 roofGlass.position.set(
-    .03,
-    1.555,
+    -.15,
+    1.417,
     0
 );
 
-cabin.add(roofGlass);
+car.add(roofGlass);
 
 
 /* RODAS */
@@ -1555,13 +1496,13 @@ function makeWheel(x, z) {
 }
 
 
-makeWheel(-1.7625, .92);
-makeWheel(-1.7625, -.92);
-makeWheel(.7125, .92);
-makeWheel(.7125, -.92);
+makeWheel(-1.24, .92);
+makeWheel(-1.24, -.92);
+makeWheel(1.24, .92);
+makeWheel(1.24, -.92);
 
 
-/* ARCOS */
+/* ARCOS DE RODA (semi-argolas sobre os pneus) */
 
 function wheelArch(x, z) {
 
@@ -1593,67 +1534,27 @@ function wheelArch(x, z) {
 }
 
 
-wheelArch(-1.7625, .935);
-wheelArch(-1.7625, -.935);
-wheelArch(.7125, .935);
-wheelArch(.7125, -.935);
+wheelArch(-1.24, .935);
+wheelArch(-1.24, -.935);
+wheelArch(1.24, .935);
+wheelArch(1.24, -.935);
 
 
-/* PARA-CHOQUES */
-
-const frontBumper =
-    new THREE.Mesh(
-        new THREE.BoxGeometry(
-            .16,
-            .32,
-            1.76
-        ),
-        bodyMat
-    );
-
-frontBumper.position.set(
-    -2.18,
-    .69,
-    0
-);
-
-car.add(frontBumper);
-
-
-const rearBumper =
-    new THREE.Mesh(
-        new THREE.BoxGeometry(
-            .14,
-            .30,
-            1.70
-        ),
-        bodyMat
-    );
-
-rearBumper.position.set(
-    2.15,
-    .67,
-    0
-);
-
-car.add(rearBumper);
-
-
-/* GRADE */
+/* GRADE FRONTAL */
 
 const grille =
     new THREE.Mesh(
         new THREE.BoxGeometry(
             .035,
-            .24,
-            .82
+            .22,
+            .80
         ),
         darkMat
     );
 
 grille.position.set(
-    -2.265,
-    .70,
+    -2.255,
+    .68,
     0
 );
 
@@ -1669,14 +1570,14 @@ for (const z of [-.53, .53]) {
             new THREE.BoxGeometry(
                 .035,
                 .20,
-                .38
+                .36
             ),
             lampMat
         );
 
     lamp.position.set(
-        -2.27,
-        .91,
+        -2.24,
+        .87,
         z
     );
 
@@ -1693,14 +1594,14 @@ for (const z of [-.56, .56]) {
             new THREE.BoxGeometry(
                 .04,
                 .19,
-                .34
+                .32
             ),
             redLampMat
         );
 
     lamp.position.set(
         2.22,
-        .90,
+        .85,
         z
     );
 
@@ -1752,7 +1653,7 @@ for (const z of [-.985, .985]) {
 
     h.position.set(
         -.12,
-        .98,
+        .97,
         z
     );
 
@@ -1900,6 +1801,7 @@ addEventListener(
 </html>`);
 
 });
+
 
  app.get('/chave_publica_atual', autenticarToken, async (req, res) => {
     const { email } = req.query;
