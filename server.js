@@ -109,7 +109,7 @@ const NOSE_X = XS[0];
 const TAIL_X = XS[XS.length - 1];
 const FRONT_AXLE_X = NOSE_X + 0.93;
 const REAR_AXLE_X  = FRONT_AXLE_X + 2.475;
-const TRACK_HALF = 0.79;
+const TRACK_HALF = 0.94; // levemente maior que a meia-largura do casco nos eixos, pra roda ficar exposta em vez de atrás da lataria
 const MAX_HALF_WIDTH = Math.max(...HW);
 
 /* CENA */
@@ -252,24 +252,24 @@ for (const z of [1, -1]) {
 const wheels = [];
 function makeWheel(x, z) {
     const g = new THREE.Group();
-    g.position.set(x, 0.34, z);
+    g.position.set(x, 0.37, z);
 
-    const tire = new THREE.Mesh(new THREE.CylinderGeometry(0.345, 0.345, 0.22, 48), rubberMat);
+    const tire = new THREE.Mesh(new THREE.CylinderGeometry(0.37, 0.37, 0.26, 48), rubberMat);
     tire.rotation.x = Math.PI / 2;
     tire.castShadow = true;
     g.add(tire);
 
-    const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.205, 0.205, 0.235, 32), rimMat);
+    const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.225, 0.225, 0.275, 32), rimMat);
     rim.rotation.x = Math.PI / 2;
     g.add(rim);
 
-    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.245, 20), darkMat);
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.285, 20), darkMat);
     hub.rotation.x = Math.PI / 2;
     g.add(hub);
 
     for (let i = 0; i < 5; i++) {
-        const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.18, 0.03), rimMat);
-        spoke.position.z = 0.125;
+        const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.20, 0.035), rimMat);
+        spoke.position.z = 0.145;
         spoke.rotation.z = i * Math.PI * 2 / 5;
         g.add(spoke);
     }
@@ -294,25 +294,23 @@ function box(w, h, d, mat, x, y, z) {
     return m;
 }
 
-const grilleX = -2.19;
-box(0.035, topYAt(grilleX) * 0.28, halfWidthAt(grilleX) * 1.2, darkMat, grilleX, topYAt(grilleX) * 0.55, 0);
+// grade — saliente bem na ponta do nariz, grande o bastante pra sempre aparecer
+box(0.12, 0.22, 0.55, darkMat, NOSE_X - 0.03, 0.42, 0);
 
-const headX = -1.95;
+// faróis — bloco grande, saliente na ponta do nariz (não mais colado na curva)
 for (const s of [1, -1]) {
-    box(0.035, topYAt(headX) * 0.28, halfWidthAt(headX) * 0.42,
-        lampMat, headX, topYAt(headX) * 0.82, s * halfWidthAt(headX) * 0.62);
+    box(0.10, 0.26, 0.40, lampMat, NOSE_X - 0.02, 0.60, s * 0.48);
 }
 
-const tailX = 1.85;
+// lanternas — mesma lógica, salientes na ponta da traseira
 for (const s of [1, -1]) {
-    box(0.04, topYAt(tailX) * 0.26, halfWidthAt(tailX) * 0.36,
-        redLampMat, tailX, topYAt(tailX) * 0.82, s * halfWidthAt(tailX) * 0.62);
+    box(0.10, 0.24, 0.36, redLampMat, TAIL_X + 0.02, 0.60, s * 0.46);
 }
 
 for (const z of [-0.42, 0.42]) {
-    const ex = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.16, 20), darkMat);
+    const ex = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.18, 20), darkMat);
     ex.rotation.z = Math.PI / 2;
-    ex.position.set(TAIL_X - 0.05, 0.30, z);
+    ex.position.set(TAIL_X + 0.03, 0.32, z);
     car.add(ex);
 }
 
