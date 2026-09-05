@@ -47,7 +47,7 @@ button {
 
 <div class="hud">
     <b>Modelo 3D — carroceria</b><br>
-    <small>Perfil esculpido a partir do desenho técnico</small><br>
+    <small>Perfil completo extraído do desenho técnico</small><br>
     <span class="badge">4480 × 1950 × 1250 mm</span>
     <span class="badge">Entre-eixos: 2475 mm</span>
     <br><br>
@@ -76,36 +76,41 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 /* ============================================================
-   PERFIL REAL DO BLUEPRINT (4480 x 1950 x 1250mm, entre-eixos
-   2475mm). X em metros, centralizado no meio geométrico do carro
-   (nariz = -2.24, traseira = +2.24). Esses pontos foram lidos
-   direto do desenho técnico: altura do teto/capô/porta-malas e
-   meia-largura em cada posição X.
+   PERFIL DO BLUEPRINT — pontos lidos direto do desenho técnico
+   (4480 x 1950 x 1250mm, entre-eixos 2475mm, balanço dianteiro
+   930mm, balanço traseiro 1075mm, bitola 1580mm). Cada linha
+   abaixo corresponde a um ponto real do contorno: nariz, capô,
+   base do pilar-A, subida do pilar-A, topo do para-brisa, teto,
+   queda do vidro traseiro, porta-malas, para-choque traseiro.
+   X em metros, centralizado no meio geométrico do carro.
    ============================================================ */
 
-const NOSE_X = -2.24;
-const TAIL_X =  2.24;
+// x (m)         nariz   pchoq   capô1   capô2   eixoD   baseA   subeA   topoPB  teto1   teto2   fimTeto quedaVT baseVT  tampa   traseD  eixoT   pchoqT  pchoq2  ponta
+const XS  = [-2.24, -2.09, -1.89, -1.54, -1.31, -1.19, -1.09, -0.96, -0.79, -0.34,  0.11,  0.31,  0.51,  0.66,  0.86, 1.165,  1.46,  1.96,  2.24];
+const TOP = [ 0.52,  0.58,  0.68,  0.72,  0.73,  0.76,  0.98,  1.23,  1.25, 1.245,  1.20,  1.00,  0.79,  0.80,  0.74,  0.70,  0.65,  0.58,  0.53];
+const HW  = [ 0.64,  0.70,  0.78,  0.85,  0.89,  0.90,  0.87,  0.83, 0.825, 0.825,  0.85,  0.90,  0.94,  0.95,  0.96, 0.975,  0.94,  0.78,  0.62];
+const BOT = [ 0.32,  0.22,  0.17,  0.15,  0.15,  0.15,  0.15,  0.15,  0.15,  0.15,  0.15,  0.15,  0.15,  0.15,  0.16,  0.16,  0.18,  0.24,  0.32];
+
+function interp(xs, vals, x) {
+    if (x <= xs[0]) return vals[0];
+    if (x >= xs[xs.length - 1]) return vals[vals.length - 1];
+    for (let i = 0; i < xs.length - 1; i++) {
+        if (x >= xs[i] && x <= xs[i + 1]) {
+            const t = (x - xs[i]) / (xs[i + 1] - xs[i]);
+            return vals[i] + t * (vals[i + 1] - vals[i]);
+        }
+    }
+    return vals[vals.length - 1];
+}
+const halfWidthAt = x => interp(XS, HW, x);
+const topYAt      = x => interp(XS, TOP, x);
+
+const NOSE_X = XS[0];
+const TAIL_X = XS[XS.length - 1];
 const FRONT_AXLE_X = NOSE_X + 0.93;
 const REAR_AXLE_X  = FRONT_AXLE_X + 2.475;
 const TRACK_HALF = 0.79;
-const MAX_HALF_WIDTH = 0.975;
-
-// meia-largura da carroceria em cada X (para-lamas mais largos,
-// cabine mais estreita, afunilando no nariz/traseira)
-const HW_XS  = [-2.24,-2.09,-1.89,-1.54,-1.31,-1.19,-1.09,-0.96,-0.79,-0.34, 0.11, 0.31, 0.51, 0.66, 0.86, 1.165, 1.46, 1.96, 2.24];
-const HW_VAL = [ 0.64, 0.70, 0.78, 0.85, 0.89, 0.90, 0.87, 0.83, 0.825,0.825,0.85, 0.90, 0.94, 0.95, 0.96, 0.975, 0.94, 0.78, 0.62];
-
-function halfWidthAt(x) {
-    if (x <= HW_XS[0]) return HW_VAL[0];
-    if (x >= HW_XS[HW_XS.length - 1]) return HW_VAL[HW_VAL.length - 1];
-    for (let i = 0; i < HW_XS.length - 1; i++) {
-        if (x >= HW_XS[i] && x <= HW_XS[i + 1]) {
-            const t = (x - HW_XS[i]) / (HW_XS[i + 1] - HW_XS[i]);
-            return HW_VAL[i] + t * (HW_VAL[i + 1] - HW_VAL[i]);
-        }
-    }
-    return HW_VAL[HW_VAL.length - 1];
-}
+const MAX_HALF_WIDTH = Math.max(...HW);
 
 /* CENA */
 const scene = new THREE.Scene();
@@ -182,87 +187,64 @@ const car = new THREE.Group();
 scene.add(car);
 
 /* ============================================================
-   CASCO ESCULPIDO — extrusão do perfil lateral (2D) seguida de
-   um "afunilamento" por vértice, usando halfWidthAt(x). Isso dá
-   uma superfície única e contínua (sem colagem de caixas soltas),
-   com os para-lamas mais largos e a cabine mais estreita, exatamente
-   como no desenho técnico.
+   CASCO — extrusão do contorno lateral real (XS/TOP/BOT), depois
+   afunilado por vértice usando halfWidthAt(x). Uma superfície só,
+   contínua, seguindo exatamente a curva do desenho técnico.
    ============================================================ */
-function buildLoftedBody(xs, topYs, bottomYs, material) {
+const shape = new THREE.Shape();
+shape.moveTo(XS[0], BOT[0]);
+for (let i = 1; i < XS.length; i++) shape.lineTo(XS[i], BOT[i]);
+shape.lineTo(XS[XS.length - 1], TOP[TOP.length - 1]);
+for (let i = XS.length - 2; i >= 0; i--) shape.lineTo(XS[i], TOP[i]);
+shape.lineTo(XS[0], BOT[0]);
 
-    const shape = new THREE.Shape();
-    shape.moveTo(xs[0], bottomYs[0]);
-    for (let i = 1; i < xs.length; i++) shape.lineTo(xs[i], bottomYs[i]);
-    shape.lineTo(xs[xs.length - 1], topYs[topYs.length - 1]);
-    for (let i = xs.length - 2; i >= 0; i--) shape.lineTo(xs[i], topYs[i]);
-    shape.lineTo(xs[0], bottomYs[0]);
+const bodyGeo = new THREE.ExtrudeGeometry(shape, {
+    depth: MAX_HALF_WIDTH * 2,
+    bevelEnabled: false,
+    curveSegments: 1
+});
+bodyGeo.translate(0, 0, -MAX_HALF_WIDTH);
 
-    const geometry = new THREE.ExtrudeGeometry(shape, {
-        depth: MAX_HALF_WIDTH * 2,
-        bevelEnabled: false,
-        curveSegments: 1
-    });
-    geometry.translate(0, 0, -MAX_HALF_WIDTH);
-
-    const pos = geometry.attributes.position;
-    for (let i = 0; i < pos.count; i++) {
-        const x = pos.getX(i);
-        const z = pos.getZ(i);
-        const scale = halfWidthAt(x) / MAX_HALF_WIDTH;
-        pos.setZ(i, z * scale);
-    }
-    pos.needsUpdate = true;
-    geometry.computeVertexNormals();
-
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    car.add(mesh);
-    return mesh;
+const bp = bodyGeo.attributes.position;
+for (let i = 0; i < bp.count; i++) {
+    const x = bp.getX(i);
+    const z = bp.getZ(i);
+    bp.setZ(i, z * (halfWidthAt(x) / MAX_HALF_WIDTH));
 }
+bp.needsUpdate = true;
+bodyGeo.computeVertexNormals();
 
-// carroceria inferior: para-choque a para-choque, teto "raso"
-// (a cabine sobe de verdade só na peça separada abaixo)
-const LOWER_XS  = [-2.24,-2.09,-1.89,-1.54,-1.31,-1.19,-1.09,-0.96,-0.79,-0.34, 0.11, 0.31, 0.51, 0.66, 0.86, 1.165, 1.46, 1.96, 2.24];
-const LOWER_TOP = [ 0.52, 0.58, 0.68, 0.72, 0.73, 0.76, 0.78, 0.79, 0.79, 0.79, 0.78, 0.78, 0.79, 0.80, 0.74, 0.70,  0.65, 0.58, 0.53];
-const LOWER_BOT = [ 0.32, 0.22, 0.17, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.16, 0.16,  0.18, 0.24, 0.32];
-buildLoftedBody(LOWER_XS, LOWER_TOP, LOWER_BOT, bodyMat);
+const bodyMesh = new THREE.Mesh(bodyGeo, bodyMat);
+bodyMesh.castShadow = true;
+bodyMesh.receiveShadow = true;
+car.add(bodyMesh);
 
-// cabine/teto: peça mais estreita, só entre o pilar-A e o pilar-C,
-// pousada em cima da carroceria inferior
-const CABIN_XS  = [-1.09, -0.96, -0.79, -0.34, 0.11, 0.31];
-const CABIN_TOP = [ 0.98,  1.23,  1.24,  1.245,1.20, 1.00];
-const CABIN_BOT = [ 0.77,  0.77,  0.77,  0.77, 0.77, 0.77];
-buildLoftedBody(CABIN_XS, CABIN_TOP, CABIN_BOT, bodyMat);
-
-/* pontos-chave para os vidros inclinados (encaixam no casco real) */
-const P_COWL       = [-1.19, 0.76];
-const P_ROOF_FRONT = [-0.79, 1.24];
-const P_ROOF_REAR  = [ 0.11, 1.20];
-const P_DECK       = [ 0.51, 0.79];
-
+/* VIDROS — dois segmentos cada, seguindo a curva real do
+   pilar-A (base -> subida -> topo) e do pilar-C (teto -> queda -> tampa) */
 function slopedPanel(p1, p2, thickness, width, mat) {
     const dx = p2[0] - p1[0];
     const dy = p2[1] - p1[1];
     const len = Math.hypot(dx, dy);
     const angle = Math.atan2(dy, dx);
-    const midX = (p1[0] + p2[0]) / 2;
-    const midY = (p1[1] + p2[1]) / 2;
     const m = new THREE.Mesh(new THREE.BoxGeometry(len, thickness, width), mat);
-    m.position.set(midX, midY, 0);
+    m.position.set((p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2, 0);
     m.rotation.z = angle;
     m.castShadow = true;
     car.add(m);
-    return m;
 }
 
-slopedPanel(P_COWL, P_ROOF_FRONT, 0.03, 1.50, glassMat);  // para-brisa
-slopedPanel(P_ROOF_REAR, P_DECK, 0.03, 1.45, glassMat);   // vidro traseiro
+// para-brisa: base do pilar-A -> subida -> topo
+slopedPanel([-1.19, 0.76], [-1.09, 0.98], 0.03, 1.50, glassMat);
+slopedPanel([-1.09, 0.98], [-0.96, 1.23], 0.03, 1.48, glassMat);
 
-// vidros laterais, entre pilar-A e pilar-C
-for (const z of [0.80, -0.80]) {
+// vidro traseiro: fim do teto -> queda -> base/tampa
+slopedPanel([0.11, 1.20], [0.31, 1.00], 0.03, 1.45, glassMat);
+slopedPanel([0.31, 1.00], [0.51, 0.79], 0.03, 1.42, glassMat);
+
+// vidros laterais (entre pilar-A e pilar-C)
+for (const z of [1, -1]) {
     const m = new THREE.Mesh(new THREE.BoxGeometry(1.10, 0.32, 0.02), glassMat);
-    m.position.set(-0.35, 0.98, z);
+    m.position.set(-0.35, 0.98, z * (halfWidthAt(-0.35) - 0.02));
     car.add(m);
 }
 
@@ -299,20 +281,11 @@ makeWheel(FRONT_AXLE_X, TRACK_HALF);
 makeWheel(FRONT_AXLE_X, -TRACK_HALF);
 makeWheel(REAR_AXLE_X, TRACK_HALF);
 makeWheel(REAR_AXLE_X, -TRACK_HALF);
+// (arco de roda removido: na proporção do blueprint a folga entre pneu
+// e carroceria é pequena demais e o arco furava o corpo)
 
-/* ARCOS DE RODA */
-function wheelArch(x, z) {
-    const torus = new THREE.Mesh(new THREE.TorusGeometry(0.39, 0.045, 12, 40, Math.PI), darkMat);
-    torus.position.set(x, 0.50, z);
-    torus.rotation.set(0, Math.PI / 2, 0);
-    car.add(torus);
-}
-wheelArch(FRONT_AXLE_X, TRACK_HALF + 0.015);
-wheelArch(FRONT_AXLE_X, -TRACK_HALF - 0.015);
-wheelArch(REAR_AXLE_X, TRACK_HALF + 0.015);
-wheelArch(REAR_AXLE_X, -TRACK_HALF - 0.015);
-
-/* GRADE, FARÓIS, LANTERNAS, ESCAPAMENTOS, MAÇANETAS */
+/* GRADE, FARÓIS, LANTERNAS — posicionados com base na altura/largura
+   real do casco naquele X, então ficam sempre dentro da superfície */
 function box(w, h, d, mat, x, y, z) {
     const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
     m.position.set(x, y, z);
@@ -320,15 +293,29 @@ function box(w, h, d, mat, x, y, z) {
     car.add(m);
     return m;
 }
-box(0.035, 0.20, 0.80, darkMat, NOSE_X + 0.06, 0.55, 0);
-for (const z of [-0.53, 0.53]) box(0.035, 0.18, 0.34, lampMat, NOSE_X + 0.08, 0.68, z);
-for (const z of [-0.56, 0.56]) box(0.04, 0.17, 0.30, redLampMat, TAIL_X - 0.06, 0.68, z);
+
+const grilleX = -2.19;
+box(0.035, topYAt(grilleX) * 0.28, halfWidthAt(grilleX) * 1.2, darkMat, grilleX, topYAt(grilleX) * 0.55, 0);
+
+const headX = -1.95;
+for (const s of [1, -1]) {
+    box(0.035, topYAt(headX) * 0.28, halfWidthAt(headX) * 0.42,
+        lampMat, headX, topYAt(headX) * 0.82, s * halfWidthAt(headX) * 0.62);
+}
+
+const tailX = 1.85;
+for (const s of [1, -1]) {
+    box(0.04, topYAt(tailX) * 0.26, halfWidthAt(tailX) * 0.36,
+        redLampMat, tailX, topYAt(tailX) * 0.82, s * halfWidthAt(tailX) * 0.62);
+}
+
 for (const z of [-0.42, 0.42]) {
     const ex = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.16, 20), darkMat);
     ex.rotation.z = Math.PI / 2;
-    ex.position.set(TAIL_X - 0.05, 0.34, z);
+    ex.position.set(TAIL_X - 0.05, 0.30, z);
     car.add(ex);
 }
+
 for (const z of [-0.90, 0.90]) box(0.22, 0.03, 0.02, darkMat, -0.15, 0.80, z);
 
 /* VISTAS */
