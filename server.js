@@ -51,35 +51,40 @@ button:active{transform:translateY(1px)}
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-/* ================================================================
-   DIMENSÕES (planta)
-   ================================================================ */
-const BW = 1.90;        // largura do corpo inferior
-const CW = 1.58;        // largura da cabine (tumblehome)
-const WR = 0.34;        // raio do pneu
-const Y0 = WR;          // altura do eixo
-const AR = 0.40;        // raio do arco da roda
-const BOT = 0.14;       // fundo da carroceria
+/* ========== DIMENSÕES ========== */
+const BW = 1.90;
+const HALF_BW = BW / 2;
+const WHEEL_R = 0.34;
+const Y0 = WHEEL_R;
+const ARCH_R = 0.42;
+const BOT = 0.22;
+const FAX = -1.310;
+const RAX = 1.165;
+const TRACK = 0.79;
 
-const FAX = -1.310;     // eixo dianteiro
-const RAX =  1.165;     // eixo traseiro
-const TRACK = 0.80;     // semi-bitola
+/* Tumblehome — topo mais estreito */
+const TAPER_Y0 = 0.55;
+const TAPER_Y1 = 1.25;
+const TAPER_AMT = 0.18;
+function taperScale(y) {
+  const t = Math.max(0, Math.min(1, (y - TAPER_Y0) / (TAPER_Y1 - TAPER_Y0)));
+  return 1 - t * TAPER_AMT;
+}
 
-// Interseção dos arcos com a linha inferior
+/* Arcos das rodas */
 const dyr = BOT - Y0;
-const dxa = Math.sqrt(AR*AR - dyr*dyr);
+const dxa = Math.sqrt(ARCH_R*ARCH_R - dyr*dyr);
 const A0 = Math.atan2(dyr, dxa);
 const A1 = Math.PI - A0;
-const RAr = RAX + dxa, FAr = FAX + dxa;
+const FA_RX = FAX + dxa;
+const RA_RX = RAX + dxa;
 
-/* ================================================================
-   CENA
-   ================================================================ */
+/* ========== CENA ========== */
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x090b0f);
 
 const camera = new THREE.PerspectiveCamera(38, innerWidth/innerHeight, 0.01, 100);
-camera.position.set(6.0, 2.2, 5.4);
+camera.position.set(6.2, 2.3, 5.6);
 
 const renderer = new THREE.WebGLRenderer({antialias:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));
@@ -94,15 +99,13 @@ document.getElementById('app').appendChild(renderer.domElement);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
-controls.minDistance = 3.0;
+controls.minDistance = 3;
 controls.maxDistance = 14;
 controls.target.set(0, 0.58, 0);
 controls.maxPolarAngle = Math.PI * 0.495;
 
-/* ================================================================
-   LUZ
-   ================================================================ */
-scene.add(new THREE.HemisphereLight(0xe8eef7, 0x20242b, 1.15));
+/* ========== LUZ ========== */
+scene.add(new THREE.HemisphereLight(0xe8eef7, 0x20242b, 1.2));
 
 const key = new THREE.DirectionalLight(0xffffff, 2.8);
 key.position.set(-5, 8, 5);
@@ -121,13 +124,11 @@ const fill = new THREE.DirectionalLight(0x9db8ff, 0.75);
 fill.position.set(6, 4, -6);
 scene.add(fill);
 
-const rim = new THREE.DirectionalLight(0xffffff, 0.6);
-rim.position.set(0, 3, -8);
-scene.add(rim);
+const rimL = new THREE.DirectionalLight(0xffffff, 0.6);
+rimL.position.set(0, 3, -8);
+scene.add(rimL);
 
-/* ================================================================
-   CHÃO
-   ================================================================ */
+/* ========== CHÃO ========== */
 const floor = new THREE.Mesh(
   new THREE.CircleGeometry(14, 96),
   new THREE.MeshStandardMaterial({color:0x10141a, roughness:0.85, metalness:0.05})
@@ -142,160 +143,138 @@ grid.material.transparent = true;
 grid.material.opacity = 0.55;
 scene.add(grid);
 
-/* ================================================================
-   MATERIAIS
-   ================================================================ */
-const bodyMat = new THREE.MeshPhysicalMaterial({
-  color: 0x6b7680, metalness: 0.55, roughness: 0.32,
-  clearcoat: 0.75, clearcoatRoughness: 0.14
-});
+/* ========== MATERIAIS ========== */
+const bodyMat   = new THREE.MeshPhysicalMaterial({color:0x6b7680, metalness:0.55, roughness:0.32, clearcoat:0.75, clearcoatRoughness:0.14});
 const darkMat   = new THREE.MeshStandardMaterial({color:0x0a0d11, metalness:0.4, roughness:0.5, side:THREE.DoubleSide});
-const glassMat  = new THREE.MeshPhysicalMaterial({color:0x0a1420, metalness:0.35, roughness:0.06, transparent:true, opacity:0.95, side:THREE.DoubleSide});
+const glassMat  = new THREE.MeshPhysicalMaterial({color:0x0a1420, metalness:0.35, roughness:0.06, transparent:true, opacity:0.96, side:THREE.DoubleSide});
 const rubberMat = new THREE.MeshStandardMaterial({color:0x080808, roughness:0.78, metalness:0.03});
 const rimMat    = new THREE.MeshStandardMaterial({color:0xb8bcc2, metalness:0.9, roughness:0.22});
 const hubMat    = new THREE.MeshStandardMaterial({color:0x2a2e33, metalness:0.7, roughness:0.4});
 const headMat   = new THREE.MeshPhysicalMaterial({color:0xdfe9ff, emissive:0xb0d0ff, emissiveIntensity:1.4, roughness:0.1, metalness:0.1});
 const tailMat   = new THREE.MeshPhysicalMaterial({color:0x6a0000, emissive:0x900000, emissiveIntensity:1.8, roughness:0.2});
 
-/* ================================================================
-   CORPO INFERIOR
-   ================================================================ */
-const bodyShape = new THREE.Shape();
-bodyShape.moveTo(-2.24, BOT);
-bodyShape.lineTo(-2.24, 0.42);          // frente
-bodyShape.lineTo(-2.02, 0.50);          // topo do para-choque
-bodyShape.lineTo(-1.70, 0.58);          // capô
-bodyShape.lineTo(-1.25, 0.66);
-bodyShape.lineTo(-0.88, 0.73);          // base do para-brisa
-bodyShape.lineTo( 0.60, 0.78);          // linha de cintura
-bodyShape.lineTo( 1.30, 0.82);
-bodyShape.lineTo( 1.85, 0.86);          // ducktail
-bodyShape.lineTo( 2.10, 0.82);
-bodyShape.lineTo( 2.24, 0.62);          // traseira
-bodyShape.lineTo( 2.24, BOT);
-bodyShape.lineTo(RAr, BOT);
-bodyShape.absarc(RAX, Y0, AR, A0, A1, false);
-bodyShape.lineTo(FAr, BOT);
-bodyShape.absarc(FAX, Y0, AR, A0, A1, false);
-bodyShape.closePath();
+/* ========== SILHUETA ÚNICA ========== */
+const shape = new THREE.Shape();
 
-const bodyGeom = new THREE.ExtrudeGeometry(bodyShape, {
-  depth: BW - 0.10,
-  bevelEnabled: true,
-  bevelSize: 0.05,
-  bevelThickness: 0.05,
-  bevelSegments: 3,
+shape.moveTo(-2.24, BOT);
+// Frente
+shape.lineTo(-2.24, 0.50);
+shape.lineTo(-2.18, 0.55);
+// Capô
+shape.lineTo(-1.95, 0.57);
+shape.lineTo(-1.65, 0.60);
+shape.lineTo(-1.35, 0.64);
+shape.lineTo(-1.05, 0.69);
+shape.lineTo(-0.85, 0.72);
+// Para-brisa
+shape.lineTo(-0.65, 0.86);
+shape.lineTo(-0.42, 1.01);
+shape.lineTo(-0.22, 1.13);
+// Teto
+shape.lineTo(-0.02, 1.20);
+shape.lineTo(0.18, 1.24);
+shape.lineTo(0.38, 1.25);
+shape.lineTo(0.58, 1.22);
+// Fastback
+shape.lineTo(0.82, 1.14);
+shape.lineTo(1.08, 1.02);
+shape.lineTo(1.32, 0.90);
+shape.lineTo(1.55, 0.83);
+shape.lineTo(1.80, 0.78);
+shape.lineTo(2.02, 0.74);
+// Traseira
+shape.lineTo(2.18, 0.66);
+shape.lineTo(2.24, 0.56);
+shape.lineTo(2.24, BOT);
+// Fundo com arcos
+shape.lineTo(RA_RX, BOT);
+shape.absarc(RAX, Y0, ARCH_R, A0, A1, false);
+shape.lineTo(FA_RX, BOT);
+shape.absarc(FAX, Y0, ARCH_R, A0, A1, false);
+shape.lineTo(-2.24, BOT);
+
+const bodyGeom = new THREE.ExtrudeGeometry(shape, {
+  depth: BW,
+  bevelEnabled: false,
   curveSegments: 32
 });
-// normaliza largura e centraliza em Z
-bodyGeom.computeBoundingBox();
-const bbb = bodyGeom.boundingBox;
-bodyGeom.scale(1, 1, BW / (bbb.max.z - bbb.min.z));
-bodyGeom.computeBoundingBox();
-const bb2 = bodyGeom.boundingBox;
-bodyGeom.translate(0, 0, -(bb2.min.z + bb2.max.z)/2);
+bodyGeom.translate(0, 0, -HALF_BW);
+
+// Tumblehome (afina o topo)
+const posAttr = bodyGeom.attributes.position;
+for (let i = 0; i < posAttr.count; i++) {
+  const y = posAttr.getY(i);
+  const z = posAttr.getZ(i);
+  posAttr.setZ(i, z * taperScale(y));
+}
+bodyGeom.computeVertexNormals();
 
 const bodyMesh = new THREE.Mesh(bodyGeom, bodyMat);
 bodyMesh.castShadow = true;
 bodyMesh.receiveShadow = true;
 scene.add(bodyMesh);
 
-/* ================================================================
-   CABINE — mais estreita, gera o tumblehome
-   ================================================================ */
-const cabinShape = new THREE.Shape();
-cabinShape.moveTo(-0.88, 0.71);         // base do para-brisa (levemente abaixo da cintura)
-cabinShape.lineTo(-0.60, 0.94);         // para-brisa
-cabinShape.lineTo(-0.28, 1.16);
-cabinShape.lineTo( 0.05, 1.24);         // pico do teto
-cabinShape.lineTo( 0.38, 1.22);
-cabinShape.lineTo( 0.78, 1.08);         // fastback
-cabinShape.lineTo( 1.15, 0.92);
-cabinShape.lineTo( 1.36, 0.83);         // base do vidro traseiro
-cabinShape.lineTo( 1.28, 0.79);         // cintura traseira
-cabinShape.closePath();
-
-const cabinGeom = new THREE.ExtrudeGeometry(cabinShape, {
-  depth: CW - 0.08,
-  bevelEnabled: true,
-  bevelSize: 0.04,
-  bevelThickness: 0.04,
-  bevelSegments: 3,
-  curveSegments: 32
-});
-cabinGeom.computeBoundingBox();
-const cbb = cabinGeom.boundingBox;
-cabinGeom.scale(1, 1, CW / (cbb.max.z - cbb.min.z));
-cabinGeom.computeBoundingBox();
-const cb2 = cabinGeom.boundingBox;
-cabinGeom.translate(0, 0, -(cb2.min.z + cb2.max.z)/2);
-
-const cabinMesh = new THREE.Mesh(cabinGeom, bodyMat);
-cabinMesh.castShadow = true;
-cabinMesh.receiveShadow = true;
-scene.add(cabinMesh);
-
-/* ================================================================
-   PAINÉIS INTERNOS DOS ARCOS (não ver oco)
-   ================================================================ */
+// Caps internos dos arcos
 for (const x of [FAX, RAX]) {
   const cap = new THREE.Mesh(
-    new THREE.CircleGeometry(AR * 0.97, 32),
+    new THREE.CircleGeometry(ARCH_R * 0.97, 32),
     darkMat
   );
   cap.position.set(x, Y0, 0);
   scene.add(cap);
 }
 
-/* ================================================================
-   JANELAS LATERAIS
-   ================================================================ */
-const sw = new THREE.Shape();
-sw.moveTo(-0.62, 0.82);
-sw.lineTo(-0.48, 0.99);
-sw.lineTo(-0.18, 1.13);
-sw.lineTo( 0.15, 1.17);
-sw.lineTo( 0.48, 1.12);
-sw.lineTo( 0.82, 0.98);
-sw.lineTo( 1.06, 0.86);
-sw.lineTo( 0.98, 0.83);
-sw.closePath();
-const sideWinGeom = new THREE.ShapeGeometry(sw);
+/* ========== JANELAS LATERAIS ========== */
+const winShape = new THREE.Shape();
+winShape.moveTo(-0.68, 0.80);
+winShape.lineTo(-0.50, 0.90);
+winShape.lineTo(-0.22, 1.08);
+winShape.lineTo(0.02, 1.17);
+winShape.lineTo(0.32, 1.19);
+winShape.lineTo(0.58, 1.14);
+winShape.lineTo(0.85, 1.02);
+winShape.lineTo(1.10, 0.87);
+winShape.lineTo(1.02, 0.82);
+winShape.closePath();
+
+const sideWinGeom = new THREE.ShapeGeometry(winShape);
 
 for (const s of [-1, 1]) {
   const win = new THREE.Mesh(sideWinGeom, glassMat);
-  win.position.z = s * (CW/2 - 0.005);
+  win.position.z = s * (taperScale(0.98) * HALF_BW + 0.004);
+  if (s < 0) win.scale.z = -1;
+  win.renderOrder = 1;
   scene.add(win);
 }
 
-/* ================================================================
-   PARA-BRISA E VIDRO TRASEIRO (painéis inclinados)
-   ================================================================ */
-function slopedPanel(x1, y1, x2, y2, width, mat) {
+/* ========== PARA-BRISA E VIDRO TRASEIRO ========== */
+function slopedGlass(x1, y1, x2, y2, mat) {
   const dx = x2 - x1, dy = y2 - y1;
   const len = Math.hypot(dx, dy);
   const ang = Math.atan2(dy, dx);
+  const midY = (y1 + y2) / 2;
+  const halfW = taperScale(midY) * HALF_BW - 0.03;
+
   const m = new THREE.Mesh(
-    new THREE.BoxGeometry(len, 0.018, width),
+    new THREE.BoxGeometry(len + 0.02, 0.015, halfW * 2),
     mat
   );
-  m.position.set((x1 + x2)/2, (y1 + y2)/2, 0);
+  m.position.set((x1 + x2) / 2, (y1 + y2) / 2, 0);
   m.rotation.z = ang;
   m.castShadow = true;
+  m.renderOrder = 1;
   return m;
 }
-scene.add(slopedPanel(-0.82, 0.76, -0.24, 1.14, CW - 0.12, glassMat));
-scene.add(slopedPanel( 0.50, 1.19,  1.28, 0.87, CW - 0.12, glassMat));
+scene.add(slopedGlass(-0.83, 0.74, -0.22, 1.13, glassMat));
+scene.add(slopedGlass(0.58, 1.21, 1.30, 0.89, glassMat));
 
-/* ================================================================
-   RODAS
-   ================================================================ */
+/* ========== RODAS ========== */
 function makeWheel(x, z, side) {
   const g = new THREE.Group();
   g.position.set(x, Y0, z);
 
   const tire = new THREE.Mesh(
-    new THREE.CylinderGeometry(WR, WR, 0.24, 36),
+    new THREE.CylinderGeometry(WHEEL_R, WHEEL_R, 0.24, 36),
     rubberMat
   );
   tire.rotation.x = Math.PI/2;
@@ -305,7 +284,7 @@ function makeWheel(x, z, side) {
 
   const rimZ = side * 0.121;
   const rim = new THREE.Mesh(
-    new THREE.CylinderGeometry(WR * 0.62, WR * 0.62, 0.02, 32),
+    new THREE.CylinderGeometry(WHEEL_R * 0.62, WHEEL_R * 0.62, 0.02, 32),
     rimMat
   );
   rim.rotation.x = Math.PI/2;
@@ -313,7 +292,7 @@ function makeWheel(x, z, side) {
   g.add(rim);
 
   const hub = new THREE.Mesh(
-    new THREE.CylinderGeometry(WR * 0.22, WR * 0.22, 0.04, 24),
+    new THREE.CylinderGeometry(WHEEL_R * 0.22, WHEEL_R * 0.22, 0.04, 24),
     hubMat
   );
   hub.rotation.x = Math.PI/2;
@@ -322,7 +301,7 @@ function makeWheel(x, z, side) {
 
   for (let i = 0; i < 5; i++) {
     const spoke = new THREE.Mesh(
-      new THREE.BoxGeometry(WR * 0.9, 0.05, 0.02),
+      new THREE.BoxGeometry(WHEEL_R * 0.9, 0.05, 0.02),
       rimMat
     );
     spoke.rotation.z = i * Math.PI * 2 / 5;
@@ -336,82 +315,60 @@ makeWheel(FAX, -TRACK, -1);
 makeWheel(RAX,  TRACK,  1);
 makeWheel(RAX, -TRACK, -1);
 
-/* ================================================================
-   FRENTE
-   ================================================================ */
-// Grade frontal escura
-const grille = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.16, 1.05), darkMat);
-grille.position.set(-2.245, 0.45, 0);
+/* ========== FRENTE ========== */
+const grille = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.14, 1.05), darkMat);
+grille.position.set(-2.245, 0.44, 0);
 scene.add(grille);
 
-// Faróis angulares
 for (const s of [-1, 1]) {
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.13, 0.44), headMat);
-  head.position.set(-2.235, 0.60, s * 0.62);
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.12, 0.42), headMat);
+  head.position.set(-2.245, 0.58, s * 0.60);
   scene.add(head);
 }
-
-// Entradas de ar inferiores
 for (const s of [-1, 1]) {
-  const intake = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.10, 0.32), darkMat);
-  intake.position.set(-2.235, 0.32, s * 0.55);
+  const intake = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.08, 0.30), darkMat);
+  intake.position.set(-2.245, 0.31, s * 0.55);
   scene.add(intake);
 }
 
-/* ================================================================
-   TRASEIRA
-   ================================================================ */
-// Barra de lanternas
-const tailBar = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.12, 1.20), tailMat);
-tailBar.position.set(2.245, 0.60, 0);
+/* ========== TRASEIRA ========== */
+const tailBar = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.14, 1.25), tailMat);
+tailBar.position.set(2.245, 0.58, 0);
 scene.add(tailBar);
 
-// Difusor
-const diff = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.12, 1.05), darkMat);
+const diff = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.10, 1.05), darkMat);
 diff.position.set(2.245, 0.30, 0);
 scene.add(diff);
 
-// Escapamentos
 for (const s of [-1, 1]) {
   const ex = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.10, 14), hubMat);
   ex.rotation.z = Math.PI/2;
-  ex.position.set(2.26, 0.30, s * 0.45);
+  ex.position.set(2.26, 0.30, s * 0.42);
   scene.add(ex);
 }
 
-/* ================================================================
-   DETALHES
-   ================================================================ */
+/* ========== DETALHES ========== */
 for (const s of [-1, 1]) {
-  // retrovisor
-  const arm = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.02, 0.10), darkMat);
-  arm.position.set(-0.66, 0.90, s * 0.82);
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.02, 0.10), darkMat);
+  arm.position.set(-0.62, 0.90, s * 0.80);
   scene.add(arm);
 
-  const mirror = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.10, 0.16), bodyMat);
-  mirror.position.set(-0.70, 0.90, s * 0.90);
+  const mirror = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.09, 0.14), bodyMat);
+  mirror.position.set(-0.66, 0.90, s * 0.88);
   scene.add(mirror);
 
-  // puxador
-  const handle = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.025, 0.025), hubMat);
-  handle.position.set(0.20, 0.72, s * (BW/2 - 0.001));
+  const handle = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.022, 0.022), hubMat);
+  handle.position.set(0.20, 0.72, s * (taperScale(0.72) * HALF_BW + 0.005));
   scene.add(handle);
-
-  // saia lateral
-  const skirt = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.08, 0.06), darkMat);
-  skirt.position.set(0.0, 0.17, s * (BW/2 - 0.02));
-  scene.add(skirt);
 }
 
-/* ================================================================
-   VISTAS
-   ================================================================ */
+/* ========== VISTAS ========== */
 function setView(pos, target = [0, 0.58, 0]) {
   camera.position.set(...pos);
   controls.target.set(...target);
   controls.update();
 }
-document.getElementById('view3d').onclick    = () => setView([6.0, 2.2, 5.4], [0, 0.58, 0]);
+document.getElementById('view3d').onclick    = () => setView([6.2, 2.3, 5.6], [0, 0.58, 0]);
 document.getElementById('viewFront').onclick = () => setView([-7.5, 1.3, 0],  [0, 0.55, 0]);
 document.getElementById('viewSide').onclick  = () => setView([0, 1.15, 8.0],   [0, 0.66, 0]);
 document.getElementById('viewTop').onclick   = () => setView([0, 8.5, 0.01],   [0, 0.20, 0]);
@@ -425,9 +382,7 @@ document.getElementById('shell').onclick = () => {
   document.getElementById('shell').textContent = shellMode ? 'Acabamento' : 'Carroceria';
 };
 
-/* ================================================================
-   LOOP
-   ================================================================ */
+/* ========== LOOP ========== */
 function animate() {
   requestAnimationFrame(animate);
   controls.update();
