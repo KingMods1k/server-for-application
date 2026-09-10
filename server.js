@@ -5,12 +5,12 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.get('/', (req, res) => {
-    res.type('html').send(`<!DOCTYPE html>
+  res.type('html').send(`<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>Carro 3D — carroceria baseada na planta</title>
+<title>Carro 3D — modelo em blocos</title>
 <style>
 *{box-sizing:border-box}
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#090b0f;font-family:Arial,sans-serif}
@@ -18,32 +18,30 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#090b0f;fon
 canvas{display:block}
 .hud{
  position:fixed;left:18px;top:18px;z-index:5;color:#fff;
- background:rgba(8,10,14,.72);border:1px solid rgba(255,255,255,.12);
+ background:rgba(8,10,14,.78);border:1px solid rgba(255,255,255,.12);
  backdrop-filter:blur(12px);border-radius:14px;padding:14px 16px;
- line-height:1.45;max-width:340px
+ line-height:1.45;max-width:360px
 }
-.hud b{font-size:16px}.hud small{opacity:.7}
-.badge{
- display:inline-block;margin-top:8px;padding:4px 7px;border-radius:6px;
- background:rgba(255,255,255,.08);font-size:11px
-}
+.hud b{font-size:16px}.hud small{opacity:.72}
+.badge{display:inline-block;margin-top:8px;padding:4px 7px;border-radius:6px;
+ background:rgba(255,255,255,.08);font-size:11px}
 .controls{
  position:fixed;right:18px;bottom:18px;z-index:5;
  display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end
 }
 button{
- border:1px solid rgba(255,255,255,.14);background:rgba(15,18,24,.82);
+ border:1px solid rgba(255,255,255,.14);background:rgba(15,18,24,.86);
  color:#fff;border-radius:10px;padding:10px 12px;cursor:pointer
 }
+button:active{transform:translateY(1px)}
 </style>
 </head>
 <body>
-
 <div id="app"></div>
 
 <div class="hud">
- <b>Modelo 3D — carroceria</b><br>
- <small>Loft da carroceria seguindo as proporções da planta técnica</small><br>
+ <b>Modelo 3D — carroceria em blocos</b><br>
+ <small>Construção por volumes sólidos, seguindo a silhueta da carroceria real e da planta.</small><br>
  <span class="badge">4480 × 1950 × 1250 mm</span>
  <span class="badge">Entre-eixos: 2475 mm</span>
  <br><br>
@@ -72,533 +70,400 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 /*
- ================================================================
- CARROCERIA — LOFT POR ESTAÇÕES
- ----------------------------------------------------------------
- Em vez de extrudar um único perfil, a carroceria é construída
- por várias seções ao longo do comprimento. Isso permite que:
- - a largura mude continuamente;
- - capô, teto e tampa traseira tenham curvas;
- - os ombros laterais sejam arredondados;
- - o teto fique mais estreito que a cintura;
- - frente e traseira afunilem;
- - a silhueta lateral continue baseada na planta.
+  ================================================================
+  MODELO EM BLOCOS — DIMENSÕES DA PLANTA
+  ================================================================
+  comprimento: 4480 mm
+  largura:     1950 mm
+  altura:      1250 mm
+  entre-eixos: 2475 mm
+  balanço F:    930 mm
+  balanço T:   1075 mm
 
- Dimensões principais da planta:
- comprimento 4480 mm
- largura     1950 mm
- altura      1250 mm
- entre-eixos 2475 mm
- balanço F    930 mm
- balanço T   1075 mm
- ================================================================
+  A ideia aqui NÃO é fazer um loft contínuo.
+  A carroceria é montada por blocos/volumes independentes:
+  assoalho, caixas dos para-lamas, capô, cabine, teto,
+  traseira e saias laterais. Isso deixa a silhueta controlável
+  e próxima da referência em vez de criar uma "caixa loftada".
 */
 
-const LENGTH = 4.480;
-const WIDTH  = 1.950;
-const HEIGHT = 1.250;
+const L = 4.480;
+const W = 1.950;
+const H = 1.250;
 
 const FRONT_X = -2.240;
-const REAR_X  =  2.240;
-const FRONT_AXLE_X = FRONT_X + 0.930; // -1.310
-const REAR_AXLE_X  = FRONT_AXLE_X + 2.475; // 1.165
+const REAR_X =  2.240;
+const FRONT_AXLE_X = -1.310;
+const REAR_AXLE_X  =  1.165;
+const TRACK = 1.580;
+const TRACK_HALF = TRACK / 2;
 
-const TRACK_HALF = 0.790; // 1580 mm de bitola
-const BODY_MAX_HALF = WIDTH / 2;
+/* cena */
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x090b0f);
 
-/*
- Perfil lateral retirado visualmente da planta.
- O importante aqui é a tendência da curva, não uma sequência
- de caixas retas.
-*/
-const SIDE_X = [
- -2.240,-2.160,-2.020,-1.850,-1.650,-1.430,-1.310,
- -1.200,-1.090,-0.970,-0.820,-0.600,-0.300,0.000,
-  0.110,0.260,0.420,0.560,0.720,0.900,1.165,
-  1.380,1.620,1.850,2.050,2.200,2.240
-];
+const camera = new THREE.PerspectiveCamera(38, innerWidth/innerHeight, .01, 100);
+camera.position.set(6.0, 2.8, 6.2);
 
-const SIDE_TOP = [
- 0.520,0.560,0.620,0.675,0.710,0.725,0.735,
- 0.790,0.980,1.155,1.235,1.250,1.255,1.250,
- 1.240,1.185,1.065,0.915,0.800,0.735,0.700,
- 0.670,0.635,0.600,0.570,0.545,0.530
-];
-
-function lerp(a,b,t){return a+(b-a)*t}
-
-function smoothstep(t){
- t=Math.max(0,Math.min(1,t));
- return t*t*(3-2*t);
-}
-
-function sampleCurve(xs,ys,x){
- if(x<=xs[0]) return ys[0];
- if(x>=xs[xs.length-1]) return ys[ys.length-1];
-
- for(let i=0;i<xs.length-1;i++){
-  if(x>=xs[i] && x<=xs[i+1]){
-   const t=smoothstep((x-xs[i])/(xs[i+1]-xs[i]));
-   return lerp(ys[i],ys[i+1],t);
-  }
- }
- return ys[ys.length-1];
-}
-
-const topAt = x => sampleCurve(SIDE_X,SIDE_TOP,x);
-
-/*
- Largura da carroceria:
- - ponta estreita;
- - região dos para-lamas mais larga;
- - cabine ligeiramente mais estreita;
- - traseira novamente arredondada.
-*/
-function widthAt(x){
- const a = Math.abs(x);
-
- if(x < -1.95) return lerp(0.52,0.88,smoothstep((x+2.24)/0.29));
- if(x < -1.45) return lerp(0.88,0.975,smoothstep((x+1.95)/0.50));
- if(x < -0.95) return lerp(0.975,0.965,smoothstep((x+1.45)/0.50));
- if(x <  0.25) return lerp(0.965,0.930,smoothstep((x+0.95)/1.20));
- if(x <  0.95) return lerp(0.930,0.975,smoothstep((x-0.25)/0.70));
- if(x <  1.55) return lerp(0.975,0.940,smoothstep((x-0.95)/0.60));
- if(x <  2.05) return lerp(0.940,0.76,smoothstep((x-1.55)/0.50));
- return lerp(0.76,0.52,smoothstep((x-2.05)/0.19));
-}
-
-/*
- A cintura fica próxima dos 950-975 mm de meia largura.
- O teto é mais estreito, reproduzindo a vista superior da planta.
-*/
-function roofWidthAt(x){
- const t = topAt(x);
-
- // Capô e porta-malas: teto não existe como cabine.
- if(x < -1.20 || x > 1.05){
-  return widthAt(x) * 0.70;
- }
-
- const cabinT = smoothstep((x+1.20)/2.25);
- return lerp(0.70,0.79,cabinT);
-}
-
-/*
- Altura inferior do casco.
- O fundo sobe nas regiões das rodas para não parecer uma caixa
- sólida passando através dos pneus.
-*/
-function bottomAt(x, side){
- let y=0.145;
-
- function arch(cx,rise,radius){
-  const d=Math.abs(x-cx);
-  if(d<radius){
-   const q=1-d/radius;
-   return rise*q*q;
-  }
-  return 0;
- }
-
- // abertura visual dos arcos dianteiro/traseiro
- const front=arch(FRONT_AXLE_X,0.135,0.43);
- const rear =arch(REAR_AXLE_X ,0.135,0.43);
-
- // A subida é mais visível nas laterais externas.
- if(Math.abs(side)>0.72) y += Math.max(front,rear);
-
- // nariz e traseira sobem conforme a planta
- if(x<FRONT_AXLE_X-0.55){
-  y += 0.14*smoothstep((FRONT_AXLE_X-0.55-x)/0.38);
- }
- if(x>REAR_AXLE_X+0.55){
-  y += 0.12*smoothstep((x-(REAR_AXLE_X+0.55))/0.40);
- }
-
- return y;
-}
-
-/* ================================================================
-   CENA
-================================================================ */
-const scene=new THREE.Scene();
-scene.background=new THREE.Color(0x090b0f);
-
-const camera=new THREE.PerspectiveCamera(38,innerWidth/innerHeight,0.01,100);
-camera.position.set(6.4,3.0,6.6);
-
-const renderer=new THREE.WebGLRenderer({antialias:true});
+const renderer = new THREE.WebGLRenderer({antialias:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));
 renderer.setSize(innerWidth,innerHeight);
-renderer.shadowMap.enabled=true;
-renderer.shadowMap.type=THREE.PCFSoftShadowMap;
-renderer.outputColorSpace=THREE.SRGBColorSpace;
-renderer.toneMapping=THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure=1.05;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
 document.getElementById('app').appendChild(renderer.domElement);
 
-const controls=new OrbitControls(camera,renderer.domElement);
-controls.enableDamping=true;
-controls.dampingFactor=.07;
-controls.minDistance=3.2;
-controls.maxDistance=12;
-controls.target.set(0,.72,0);
+const controls = new OrbitControls(camera,renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = .07;
+controls.minDistance = 3.0;
+controls.maxDistance = 12;
+controls.target.set(0,.68,0);
 
 /* iluminação */
-scene.add(new THREE.HemisphereLight(0xdfe9ff,0x20242c,2));
+scene.add(new THREE.HemisphereLight(0xe8eef7,0x20242b,2.0));
 
-const key=new THREE.DirectionalLight(0xffffff,3);
+const key = new THREE.DirectionalLight(0xffffff,3.0);
 key.position.set(-4,7,5);
-key.castShadow=true;
+key.castShadow = true;
 key.shadow.mapSize.set(2048,2048);
 scene.add(key);
 
-const fill=new THREE.DirectionalLight(0x9db8ff,1.2);
+const fill = new THREE.DirectionalLight(0x9db8ff,1.0);
 fill.position.set(5,3,-5);
 scene.add(fill);
 
 /* chão */
-const floor=new THREE.Mesh(
+const floor = new THREE.Mesh(
  new THREE.CircleGeometry(12,96),
- new THREE.MeshStandardMaterial({
-  color:0x11151b,roughness:.82,metalness:.05
- })
+ new THREE.MeshStandardMaterial({color:0x11151b,roughness:.82,metalness:.05})
 );
-floor.rotation.x=-Math.PI/2;
-floor.position.y=.02;
-floor.receiveShadow=true;
+floor.rotation.x = -Math.PI/2;
+floor.position.y = .02;
+floor.receiveShadow = true;
 scene.add(floor);
 
-const grid=new THREE.GridHelper(12,24,0x242a33,0x171b21);
-grid.position.y=.025;
+const grid = new THREE.GridHelper(12,24,0x242a33,0x171b21);
+grid.position.y = .025;
 scene.add(grid);
 
 /* materiais */
-const bodyMat=new THREE.MeshPhysicalMaterial({
- color:0x707b86,
- metalness:.72,
- roughness:.25,
- clearcoat:.75,
- clearcoatRoughness:.14,
+const bodyMat = new THREE.MeshPhysicalMaterial({
+ color:0x697581, metalness:.68, roughness:.28,
+ clearcoat:.65, clearcoatRoughness:.18
+});
+const edgeMat = new THREE.MeshStandardMaterial({
+ color:0x3e4852, metalness:.55, roughness:.35
+});
+const darkMat = new THREE.MeshStandardMaterial({
+ color:0x080a0d, metalness:.2, roughness:.42
+});
+const glassMat = new THREE.MeshPhysicalMaterial({
+ color:0x0d1721, metalness:.1, roughness:.08,
+ transmission:.05, transparent:true, opacity:.9,
  side:THREE.DoubleSide
 });
-
-const darkMat=new THREE.MeshStandardMaterial({
- color:0x090b0e,metalness:.25,roughness:.38
+const rubberMat = new THREE.MeshStandardMaterial({
+ color:0x050505,roughness:.72,metalness:.03
 });
-
-const glassMat=new THREE.MeshPhysicalMaterial({
- color:0x101821,
- metalness:.15,
- roughness:.08,
- transmission:.08,
- transparent:true,
- opacity:.86,
- side:THREE.DoubleSide
+const rimMat = new THREE.MeshStandardMaterial({
+ color:0x9da4ad,metalness:.9,roughness:.2
 });
-
-const rubberMat=new THREE.MeshStandardMaterial({
- color:0x050505,roughness:.72,metalness:.05
+const headMat = new THREE.MeshPhysicalMaterial({
+ color:0xeaf6ff, emissive:0xbad8ff, emissiveIntensity:1.8,
+ roughness:.12, metalness:.04
 });
-
-const rimMat=new THREE.MeshStandardMaterial({
- color:0x9da4ad,metalness:.92,roughness:.18
-});
-
-const lampMat=new THREE.MeshPhysicalMaterial({
- color:0xe9f5ff,
- emissive:0xbad8ff,
- emissiveIntensity:2.2,
- roughness:.12,
- metalness:.05
-});
-
-const redLampMat=new THREE.MeshPhysicalMaterial({
- color:0x6b0000,
- emissive:0x610000,
- emissiveIntensity:2,
+const tailMat = new THREE.MeshPhysicalMaterial({
+ color:0x750000, emissive:0x580000, emissiveIntensity:1.8,
  roughness:.18
 });
 
-const car=new THREE.Group();
+const car = new THREE.Group();
 scene.add(car);
 
 /* ================================================================
-   CARROCERIA — PERFIL ÚNICO EXTRUDADO
-   Contorno lateral contínuo (para-choque traseiro -> porta-malas ->
-   vidro traseiro -> teto -> parabrisa -> capô -> para-choque
-   dianteiro), extrudado ao longo da largura com afunilamento nas
-   pontas. Verificado visualmente ponto a ponto antes de aplicar.
-================================================================ */
+   HELPERS — TODOS OS VOLUMES SÃO EXPLÍCITOS
+   ================================================================ */
 
-const SIDE_PROFILE = [
- [ 2.240, 0.15],
- [ 2.240, 0.50],
- [ 1.665, 0.58],
- [ 0.865, 0.65],
- [ 0.415, 1.10],
- [-0.385, 1.15],
- [-1.185, 0.98],
- [-1.685, 0.62],
- [-2.185, 0.42],
- [-2.240, 0.30],
- [-2.240, 0.15]
+function box(name,w,h,d,x,y,z,mat=bodyMat){
+ const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);
+ m.name = name;
+ m.position.set(x,y,z);
+ m.castShadow = true;
+ m.receiveShadow = true;
+ car.add(m);
+ return m;
+}
+
+/* Prisma extrudido a partir de um perfil 2D X/Y.
+   Usado somente onde uma peça realmente precisa ter inclinação,
+   como capô, teto e traseira. Continua sendo um bloco sólido. */
+function prism(name, profile, depth, z, mat=bodyMat){
+ const verts = [];
+ const inds = [];
+ const n = profile.length;
+
+ for(const p of profile) verts.push(p[0],p[1],z-depth/2);
+ for(const p of profile) verts.push(p[0],p[1],z+depth/2);
+
+ for(let i=0;i<n;i++){
+   const j=(i+1)%n;
+   inds.push(i,j,n+j, i,n+j,n+i);
+ }
+ for(let i=1;i<n-1;i++) inds.push(0,i+1,i);
+ for(let i=1;i<n-1;i++) inds.push(n,n+i,n+i+1);
+
+ const g = new THREE.BufferGeometry();
+ g.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));
+ g.setIndex(inds);
+ g.computeVertexNormals();
+
+ const m = new THREE.Mesh(g,mat);
+ m.name=name;
+ m.castShadow=true;
+ m.receiveShadow=true;
+ car.add(m);
+ return m;
+}
+
+/* painel plano fino */
+function panel(name,w,h,x,y,z,mat=darkMat,rotX=0,rotY=0,rotZ=0){
+ const m=box(name,w,h,.018,x,y,z,mat);
+ m.rotation.set(rotX,rotY,rotZ);
+ return m;
+}
+
+/* ================================================================
+   1. BASE / ASSOALHO
+   ================================================================ */
+
+box('assoalho',3.55,.18,1.62,.03,.30,0,edgeMat);
+
+/* soleiras — deixam a base da lateral visível */
+for(const s of [-1,1]){
+ box('soleira',2.95,.20,.12,.0,.43,s*.88,bodyMat);
+}
+
+/* ================================================================
+   2. CAPÔ — baixo, comprido e quase plano como na lateral
+   ================================================================ */
+
+prism('capo',[
+ [-2.18,.50],[-1.92,.56],[-1.48,.61],[-1.20,.66],
+ [-1.20,.82],[-1.72,.75],[-2.15,.62]
+],1.62,0,bodyMat);
+
+/* pequena borda frontal */
+box('nariz',.10,.22,1.48,-2.20,.50,0,bodyMat);
+
+/* ================================================================
+   3. CABINE — BLOCO CENTRAL COM PERFIL DA PLANTA
+   ================================================================ */
+
+const cabinProfile = [
+ [-1.22,.68],
+ [-1.10,.92],
+ [-.91,1.14],
+ [-.58,1.22],
+ [.18,1.22],
+ [.55,1.10],
+ [.86,.82],
+ [.78,.70],
+ [-.98,.70]
 ];
+prism('cabine',cabinProfile,1.55,0,bodyMat);
 
-function widthFactorAt(x){
- const xs = SIDE_PROFILE.map(p=>p[0]);
- const xmin = Math.min(...xs), xmax = Math.max(...xs);
- const t = (x-xmin)/(xmax-xmin);
- if(t < 0.15) return 0.45 + 0.55*(t/0.15);
- if(t > 0.85) return 0.45 + 0.55*((1-t)/0.15);
- return 1.0;
+/* teto como bloco fino */
+prism('teto',[
+ [-.90,1.155],[-.58,1.235],[.18,1.235],[.48,1.12],
+ [.40,1.20],[-.72,1.22]
+],1.42,0,bodyMat);
+
+/* ================================================================
+   4. VIDROS — superfícies separadas, acompanhando o bloco da cabine
+   ================================================================ */
+
+/* para-brisa */
+prism('parabrisa',[
+ [-1.105,.91],[-.91,1.135],[-.78,1.15],[-.97,.89]
+],1.49,0,glassMat);
+
+/* vidro traseiro */
+prism('vidro_traseiro',[
+ [.20,1.15],[.48,1.06],[.76,.84],[.68,.79],[.12,1.06]
+],1.47,0,glassMat);
+
+/* janelas laterais */
+for(const s of [-1,1]){
+ const z=s*.786;
+ const sideWindow=prism('janela_lateral',[
+  [-1.02,.86],[-.85,1.105],[-.60,1.18],[.12,1.17],
+  [.42,1.04],[.70,.83],[.53,.77],[-.92,.79]
+ ],.025,z,glassMat);
 }
 
-const n = SIDE_PROFILE.length;
-const vertices = [];
-const indices = [];
+/* pilares: blocos estreitos, não linhas desenhadas */
+for(const s of [-1,1]){
+ box('pilar_A',.10,.36,.08,-.98,1.00,s*.79,edgeMat)
+   .rotation.z=-.35;
+ box('pilar_B',.08,.46,.08,-.05,1.00,s*.79,edgeMat)
+   .rotation.z=.10;
+ box('pilar_C',.09,.36,.08,.48,.94,s*.79,edgeMat)
+   .rotation.z=.48;
+}
 
-for(const side of [-1,1]){
- for(const [x,y] of SIDE_PROFILE){
-  const z = side * (WIDTH/2) * widthFactorAt(x);
-  vertices.push(x,y,z);
+/* ================================================================
+   5. TRASEIRA — tampa curta + bloco traseiro
+   ================================================================ */
+
+prism('traseira',[
+ [.55,.67],[.92,.69],[1.52,.63],[2.05,.54],[2.22,.48],
+ [2.20,.75],[1.60,.77],[1.02,.78]
+],1.64,0,bodyMat);
+
+box('painel_traseiro',.12,.30,1.55,2.18,.53,0,bodyMat);
+
+/* ================================================================
+   6. PARA-LAMAS — caixas grossas em volta das rodas
+   ================================================================ */
+
+function fender(x,side){
+ const z=side*0.80;
+ const f=box('para_lama',.82,.17,.36,x,.67,z,bodyMat);
+ f.rotation.z=0;
+ return f;
+}
+
+for(const s of [-1,1]){
+ fender(FRONT_AXLE_X,s);
+ fender(REAR_AXLE_X,s);
+}
+
+/* ombros laterais sobre os para-lamas */
+for(const s of [-1,1]){
+ box('ombro_dianteiro',.78,.16,.20,FRONT_AXLE_X,.79,s*.91,bodyMat);
+ box('ombro_traseiro',.82,.15,.20,REAR_AXLE_X,.76,s*.91,bodyMat);
+}
+
+/* ================================================================
+   7. RECORTES VISUAIS DOS ARCOS DE RODA
+   ================================================================ */
+
+/* O pneu cobre o centro; os blocos acima deixam a leitura de arco. */
+for(const s of [-1,1]){
+ for(const x of [FRONT_AXLE_X,REAR_AXLE_X]){
+   box('arco_superior',.64,.12,.18,x,.84,s*.91,darkMat);
  }
 }
 
-for(let i=0;i<n;i++){
- const a=i, b=(i+1)%n, c=n+(i+1)%n, d=n+i;
- indices.push(a,b,c, a,c,d);
-}
-for(let i=1;i<n-1;i++){
- indices.push(0,i+1,i);
-}
-for(let i=1;i<n-1;i++){
- indices.push(n,n+i,n+i+1);
-}
-
-const bodyGeo = new THREE.BufferGeometry();
-bodyGeo.setAttribute('position', new THREE.Float32BufferAttribute(vertices,3));
-bodyGeo.setIndex(indices);
-bodyGeo.computeVertexNormals();
-
-const bodyMesh = new THREE.Mesh(bodyGeo,bodyMat);
-bodyMesh.castShadow = true;
-bodyMesh.receiveShadow = true;
-
-car.add(bodyMesh);
-
 /* ================================================================
-   PAINÉIS LATERAIS
-   Faixas discretas ajudam a dar leitura de carroceria sem destruir
-   a forma principal.
-================================================================ */
-function panelStrip(x1,x2,y1,y2,z,material,curve=0){
- const pts=[
-  new THREE.Vector3(x1,y1,z),
-  new THREE.Vector3((x1+x2)/2,(y1+y2)/2+curve,z),
-  new THREE.Vector3(x2,y2,z)
- ];
-
- const curve3=new THREE.CatmullRomCurve3(pts);
- const geo=new THREE.TubeGeometry(curve3,18,.012,8,false);
- const mesh=new THREE.Mesh(geo,material);
- mesh.castShadow=true;
- car.add(mesh);
- return mesh;
-}
-
-panelStrip(-1.82,0.82,.56,.61,.978,darkMat,.025);
-
-/* ================================================================
-   VIDROS
-   Agora seguem as curvas do teto, em vez de caixas retangulares.
-================================================================ */
-function makeGlassSurface(points,width){
- const curve=new THREE.CatmullRomCurve3(
-  points.map(p=>new THREE.Vector3(p[0],p[1],0))
- );
- const tube=new THREE.TubeGeometry(curve,32,.018,8,false);
-
- // achata o tubo na direção Z para virar um painel fino
- const pos=tube.attributes.position;
- for(let i=0;i<pos.count;i++){
-  pos.setZ(i,pos.getZ(i));
- }
- const mesh=new THREE.Mesh(tube,glassMat);
- mesh.scale.z=width;
- mesh.castShadow=true;
- car.add(mesh);
- return mesh;
-}
-
-/* para-brisa — curva contínua baseada no pilar A */
-makeGlassSurface([
- [-1.19,.77],
- [-1.10,.96],
- [-1.00,1.14],
- [-.92,1.22]
-],1.43);
-
-/* vidro traseiro — queda progressiva */
-makeGlassSurface([
- [.10,1.205],
- [.22,1.12],
- [.34,1.01],
- [.47,.88],
- [.53,.80]
-],1.38);
-
-/*
- Vidros laterais como superfícies planas inclinadas, acompanhando
- a linha do teto.
-*/
-function sideWindow(side){
- const z=side*0.875;
-
- const shape=new THREE.Shape();
- shape.moveTo(-.98,.84);
- shape.lineTo(-.87,1.13);
- shape.quadraticCurveTo(-.52,1.22,-.05,1.205);
- shape.lineTo(.42,.90);
- shape.quadraticCurveTo(-.15,.83,-.98,.84);
-
- const geo=new THREE.ShapeGeometry(shape,12);
- const mesh=new THREE.Mesh(geo,glassMat);
- mesh.rotation.y=side>0?0:Math.PI;
- mesh.position.z=z;
- mesh.scale.x=1;
- mesh.castShadow=true;
- car.add(mesh);
-}
-
-sideWindow(1);
-sideWindow(-1);
-
-/* ================================================================
-   RODAS
-================================================================ */
-const wheels=[];
+   8. RODAS
+   ================================================================ */
 
 function makeWheel(x,z){
  const g=new THREE.Group();
- g.position.set(x,.38,z);
+ g.name='roda';
+ g.position.set(x,.40,z);
 
  const tire=new THREE.Mesh(
-  new THREE.CylinderGeometry(.37,.37,.26,48),
-  rubberMat
+   new THREE.CylinderGeometry(.37,.37,.25,32),
+   rubberMat
  );
  tire.rotation.x=Math.PI/2;
  tire.castShadow=true;
  g.add(tire);
 
  const rim=new THREE.Mesh(
-  new THREE.CylinderGeometry(.225,.225,.275,32),
-  rimMat
+   new THREE.CylinderGeometry(.225,.225,.265,24),
+   rimMat
  );
  rim.rotation.x=Math.PI/2;
  g.add(rim);
 
  const hub=new THREE.Mesh(
-  new THREE.CylinderGeometry(.085,.085,.285,20),
-  darkMat
+   new THREE.CylinderGeometry(.075,.075,.28,16),
+   darkMat
  );
  hub.rotation.x=Math.PI/2;
  g.add(hub);
 
  for(let i=0;i<5;i++){
-  const spoke=new THREE.Mesh(
-   new THREE.BoxGeometry(.03,.20,.035),
-   rimMat
-  );
-  spoke.position.z=.145;
-  spoke.rotation.z=i*Math.PI*2/5;
-  g.add(spoke);
+   const spoke=new THREE.Mesh(
+     new THREE.BoxGeometry(.035,.17,.035),rimMat
+   );
+   spoke.position.z=.145;
+   spoke.rotation.z=i*Math.PI*2/5;
+   g.add(spoke);
  }
 
  car.add(g);
- wheels.push(g);
 }
 
 makeWheel(FRONT_AXLE_X, TRACK_HALF);
 makeWheel(FRONT_AXLE_X,-TRACK_HALF);
-makeWheel(REAR_AXLE_X,TRACK_HALF);
+makeWheel(REAR_AXLE_X, TRACK_HALF);
 makeWheel(REAR_AXLE_X,-TRACK_HALF);
 
 /* ================================================================
-   FRENTE / TRASEIRA
-================================================================ */
-function box(w,h,d,mat,x,y,z){
- const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);
- m.position.set(x,y,z);
- m.castShadow=true;
- car.add(m);
- return m;
+   9. FRENTE / TRASEIRA
+   ================================================================ */
+
+box('grade_frontal',.08,.22,.62,-2.255,.47,0,darkMat);
+
+for(const s of [-1,1]){
+ box('farol',.07,.16,.34,-2.275,.60,s*.48,headMat);
+ box('lanterna',.08,.18,.34,2.255,.59,s*.47,tailMat);
 }
 
-/* grade */
-box(.10,.18,.52,darkMat,FRONT_X-.025,.40,0);
+/* difusor inferior simples */
+box('difusor_traseiro',.10,.12,.92,2.18,.32,0,darkMat);
 
-/* faróis mais integrados à frente */
-for(const s of [1,-1]){
- box(.08,.18,.34,lampMat,FRONT_X-.015,.57,s*.46);
-}
+/* ================================================================
+   10. LINHAS DE PAINEL — poucas e alinhadas aos blocos
+   ================================================================ */
 
-/* lanternas */
-for(const s of [1,-1]){
- box(.09,.19,.34,redLampMat,REAR_X+.02,.57,s*.45);
-}
-
-/* escapamentos */
-for(const z of [-.40,.40]){
- const ex=new THREE.Mesh(
-  new THREE.CylinderGeometry(.065,.065,.18,20),
-  darkMat
- );
- ex.rotation.z=Math.PI/2;
- ex.position.set(REAR_X+.04,.31,z);
- car.add(ex);
+for(const s of [-1,1]){
+ panel('linha_porta',1.75,.018,-.25,.67,s*.984,edgeMat);
+ panel('linha_capo',1.05,.018,-1.62,.68,s*.83,edgeMat);
+ panel('linha_traseira',.75,.018,1.50,.68,s*.84,edgeMat);
 }
 
 /* ================================================================
    VISTAS
-================================================================ */
-function setView(pos,target){
+   ================================================================ */
+
+function setView(pos,target=[0,.70,0]){
  camera.position.set(...pos);
  controls.target.set(...target);
  controls.update();
 }
 
 document.getElementById('view3d').onclick=
- ()=>setView([6.4,3,6.6],[0,.72,0]);
+ ()=>setView([6.0,2.8,6.2],[0,.70,0]);
 
 document.getElementById('viewFront').onclick=
- ()=>setView([-6.3,1.15,0],[0,.70,0]);
+ ()=>setView([-6.4,1.15,0],[0,.67,0]);
 
 document.getElementById('viewSide').onclick=
- ()=>setView([0,1.35,7.2],[0,.78,0]);
+ ()=>setView([0,1.25,7.4],[0,.76,0]);
 
 document.getElementById('viewTop').onclick=
- ()=>setView([0,7.5,.01],[0,.15,0]);
+ ()=>setView([0,7.5,.01],[0,.20,0]);
 
-/* ================================================================
-   MODO CARROCERIA
-================================================================ */
+/* modo carroceria: só altera acabamento, sem trocar a geometria */
 let shellMode=false;
-
 document.getElementById('shell').onclick=()=>{
  shellMode=!shellMode;
-
- bodyMat.color.set(shellMode?0x9aa1a8:0x707b86);
- bodyMat.metalness=shellMode?.48:.72;
- bodyMat.roughness=shellMode?.48:.25;
-
+ bodyMat.color.set(shellMode?0x9aa1a8:0x697581);
+ bodyMat.metalness=shellMode?.45:.68;
+ bodyMat.roughness=shellMode?.46:.28;
  document.getElementById('shell').textContent=
-  shellMode?'Acabamento':'Carroceria';
+   shellMode?'Acabamento':'Carroceria';
 };
 
-/* ================================================================
-   ANIMAÇÃO
-================================================================ */
+/* animação */
 function animate(){
  requestAnimationFrame(animate);
  controls.update();
