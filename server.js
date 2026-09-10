@@ -103,7 +103,7 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x090b0f);
 
 const camera = new THREE.PerspectiveCamera(38, innerWidth/innerHeight, .01, 100);
-camera.position.set(6.0, 2.8, 6.2);
+camera.position.set(5.6, 2.55, 5.8);
 
 const renderer = new THREE.WebGLRenderer({antialias:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));
@@ -151,7 +151,7 @@ scene.add(grid);
 
 /* materiais */
 const bodyMat = new THREE.MeshPhysicalMaterial({
- color:0x697581, metalness:.68, roughness:.28,
+ color:0x727d88, metalness:.62, roughness:.30,
  clearcoat:.65, clearcoatRoughness:.18
 });
 const edgeMat = new THREE.MeshStandardMaterial({
@@ -241,10 +241,7 @@ function panel(name,w,h,x,y,z,mat=darkMat,rotX=0,rotY=0,rotZ=0){
 
 box('assoalho',3.55,.18,1.62,.03,.30,0,edgeMat);
 
-/* soleiras — deixam a base da lateral visível */
-for(const s of [-1,1]){
- box('soleira',2.95,.20,.12,.0,.43,s*.88,bodyMat);
-}
+/* a lateral integrada abaixo cuidará das soleiras */
 
 /* ================================================================
    2. CAPÔ — baixo, comprido e quase plano como na lateral
@@ -326,37 +323,71 @@ prism('traseira',[
 box('painel_traseiro',.12,.30,1.55,2.18,.53,0,bodyMat);
 
 /* ================================================================
-   6. PARA-LAMAS — caixas grossas em volta das rodas
+   6. LATERAIS / PARA-LAMAS INTEGRADOS
+   ================================================================
+   IMPORTANTE:
+   Não usamos barras retangulares por fora das rodas.
+   Cada lateral é um bloco fino sólido com dois recortes circulares
+   para os pneus. Assim o para-lama nasce da própria carroceria.
    ================================================================ */
 
-function fender(x,side){
- const z=side*0.80;
- const f=box('para_lama',.82,.17,.36,x,.67,z,bodyMat);
- f.rotation.z=0;
- return f;
-}
+function sideShell(side){
+ const shape = new THREE.Shape();
 
-for(const s of [-1,1]){
- fender(FRONT_AXLE_X,s);
- fender(REAR_AXLE_X,s);
-}
+ shape.moveTo(-2.22,.25);
+ shape.lineTo(-2.12,.48);
+ shape.lineTo(-1.72,.62);
+ shape.lineTo(-1.30,.70);
+ shape.lineTo(-1.12,.78);
+ shape.lineTo(.72,.76);
+ shape.lineTo(1.25,.70);
+ shape.lineTo(1.72,.62);
+ shape.lineTo(2.20,.48);
+ shape.lineTo(2.22,.25);
+ shape.lineTo(1.50,.25);
+ shape.lineTo(.35,.27);
+ shape.lineTo(-.55,.27);
+ shape.lineTo(-1.55,.25);
+ shape.closePath();
 
-/* ombros laterais sobre os para-lamas */
-for(const s of [-1,1]){
- box('ombro_dianteiro',.78,.16,.20,FRONT_AXLE_X,.79,s*.91,bodyMat);
- box('ombro_traseiro',.82,.15,.20,REAR_AXLE_X,.76,s*.91,bodyMat);
-}
-
-/* ================================================================
-   7. RECORTES VISUAIS DOS ARCOS DE RODA
-   ================================================================ */
-
-/* O pneu cobre o centro; os blocos acima deixam a leitura de arco. */
-for(const s of [-1,1]){
+ /* aberturas das rodas: os pneus ficam realmente dentro da lateral */
  for(const x of [FRONT_AXLE_X,REAR_AXLE_X]){
-   box('arco_superior',.64,.12,.18,x,.84,s*.91,darkMat);
+   const hole = new THREE.Path();
+   hole.absarc(x,.405,.405,0,Math.PI*2,true);
+   shape.holes.push(hole);
  }
+
+ const geo = new THREE.ExtrudeGeometry(shape,{
+   depth:.13,
+   bevelEnabled:false,
+   steps:1,
+   curveSegments:24
+ });
+
+ const mesh = new THREE.Mesh(geo,bodyMat);
+ mesh.name='lateral_carroceria';
+ mesh.position.z = side*.895;
+ mesh.rotation.y = side<0 ? Math.PI : 0;
+ mesh.castShadow=true;
+ mesh.receiveShadow=true;
+ car.add(mesh);
+ return mesh;
 }
+
+sideShell(1);
+sideShell(-1);
+
+/* soleiras compactas, alinhadas à carroceria */
+for(const s of [-1,1]){
+ box('soleira',2.65,.16,.10,-.02,.34,s*.94,bodyMat);
+}
+
+/* pequenas quinas superiores dos para-lamas — sem criar trilhos */
+for(const s of [-1,1]){
+ box('ombro_dianteiro',.58,.10,.13,FRONT_AXLE_X,.79,s*.91,bodyMat);
+ box('ombro_traseiro',.62,.10,.13,REAR_AXLE_X,.73,s*.91,bodyMat);
+}
+
 
 /* ================================================================
    8. RODAS
@@ -368,7 +399,7 @@ function makeWheel(x,z){
  g.position.set(x,.40,z);
 
  const tire=new THREE.Mesh(
-   new THREE.CylinderGeometry(.37,.37,.25,32),
+   new THREE.CylinderGeometry(.365,.365,.25,32),
    rubberMat
  );
  tire.rotation.x=Math.PI/2;
@@ -376,7 +407,7 @@ function makeWheel(x,z){
  g.add(tire);
 
  const rim=new THREE.Mesh(
-   new THREE.CylinderGeometry(.225,.225,.265,24),
+   new THREE.CylinderGeometry(.215,.215,.265,24),
    rimMat
  );
  rim.rotation.x=Math.PI/2;
