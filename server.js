@@ -119,8 +119,8 @@ const SIDE_X = [
 ];
 
 const SIDE_TOP = [
- 0.430,0.470,0.530,0.590,0.650,0.705,0.740,
- 0.800,0.900,1.030,1.150,1.220,1.250,1.250,
+ 0.520,0.560,0.620,0.675,0.710,0.725,0.735,
+ 0.790,0.980,1.155,1.235,1.250,1.255,1.250,
  1.240,1.185,1.065,0.915,0.800,0.735,0.700,
  0.670,0.635,0.600,0.570,0.545,0.530
 ];
@@ -324,126 +324,60 @@ const car=new THREE.Group();
 scene.add(car);
 
 /* ================================================================
-   LOFT DA CARROCERIA
-   Loft suave seguindo o perfil lateral e a planta do veículo.
+   CARROCERIA — PERFIL ÚNICO EXTRUDADO
+   Contorno lateral contínuo (para-choque traseiro -> porta-malas ->
+   vidro traseiro -> teto -> parabrisa -> capô -> para-choque
+   dianteiro), extrudado ao longo da largura com afunilamento nas
+   pontas. Verificado visualmente ponto a ponto antes de aplicar.
 ================================================================ */
 
-const STATIONS = 181;
-const SECTION_POINTS = 64;
+const SIDE_PROFILE = [
+ [ 2.240, 0.15],
+ [ 2.240, 0.50],
+ [ 1.665, 0.58],
+ [ 0.865, 0.65],
+ [ 0.415, 1.10],
+ [-0.385, 1.15],
+ [-1.185, 0.98],
+ [-1.685, 0.62],
+ [-2.185, 0.42],
+ [-2.240, 0.30],
+ [-2.240, 0.15]
+];
 
-/*
- * Seção transversal reconstruída da planta:
- * fundo central -> lateral inferior -> cintura -> ombro -> teto plano.
- * Diferente da versão anterior, o teto NÃO converge para z=0.
- */
-function sectionPoint(x,i){
-    const w = widthAt(x);
-    const roofW = Math.min(w * 0.78, roofWidthAt(x));
-    const top = topAt(x);
-    const bottom = bottomAt(x,w);
-    const H = Math.max(0.001, top-bottom);
-
-    const u = i / SECTION_POINTS;
-    const a = u * Math.PI * 2;
-
-    // parâmetro vertical: 0 = fundo, 1 = teto
-    const q = (1 - Math.cos(a)) * 0.5;
-    const s = Math.sin(a);
-    const right = s >= 0;
-
-    // Perfil vertical: fundo arredondado, laterais cheias e teto quase plano.
-    let y;
-    if(q < 0.12){
-        const t = smoothstep(q/0.12);
-        y = lerp(bottom, bottom + H*0.12, t);
-    }else if(q < 0.52){
-        const t = smoothstep((q-0.12)/0.40);
-        y = lerp(bottom + H*0.12, bottom + H*0.46, t);
-    }else if(q < 0.82){
-        const t = smoothstep((q-0.52)/0.30);
-        y = lerp(bottom + H*0.46, top - H*0.08, t);
-    }else{
-        const t = smoothstep((q-0.82)/0.18);
-        y = lerp(top - H*0.08, top, t);
-    }
-
-    // Largura por altura. O teto conserva a largura da cabine.
-    let f;
-    if(q < 0.10){
-        f = lerp(0.58,0.78,smoothstep(q/0.10));
-    }else if(q < 0.30){
-        f = lerp(0.78,1.00,smoothstep((q-0.10)/0.20));
-    }else if(q < 0.58){
-        f = 1.00;
-    }else if(q < 0.82){
-        f = lerp(1.00,roofW/w,smoothstep((q-0.58)/0.24));
-    }else{
-        f = roofW/w;
-    }
-
-    const zAbs = Math.abs(s) * w * f;
-
-    // Achata a região superior para formar um teto realmente plano.
-    let z = right ? zAbs : -zAbs;
-    if(q > 0.82){
-        const roofT = smoothstep((q-0.82)/0.18);
-        z = (right ? 1 : -1) * lerp(zAbs, roofW, roofT);
-    }
-
-    // Mantém os extremos do teto próximos de ±roofW e arredonda os ombros.
-    if(q > 0.70 && q <= 0.82){
-        const shoulder = smoothstep((q-0.70)/0.12);
-        const target = roofW + (w-roofW)*(1-shoulder);
-        z = (right ? 1 : -1) * lerp(zAbs,target,0.35);
-    }
-
-    return {x,y,z};
+function widthFactorAt(x){
+ const xs = SIDE_PROFILE.map(p=>p[0]);
+ const xmin = Math.min(...xs), xmax = Math.max(...xs);
+ const t = (x-xmin)/(xmax-xmin);
+ if(t < 0.15) return 0.45 + 0.55*(t/0.15);
+ if(t > 0.85) return 0.45 + 0.55*((1-t)/0.15);
+ return 1.0;
 }
 
+const n = SIDE_PROFILE.length;
 const vertices = [];
 const indices = [];
 
-for(let s=0;s<STATIONS;s++){
-    const u = s/(STATIONS-1);
-    const x = lerp(FRONT_X,REAR_X,u);
-
-    for(let i=0;i<SECTION_POINTS;i++){
-        const p = sectionPoint(x,i);
-        vertices.push(p.x,p.y,p.z);
-    }
+for(const side of [-1,1]){
+ for(const [x,y] of SIDE_PROFILE){
+  const z = side * (WIDTH/2) * widthFactorAt(x);
+  vertices.push(x,y,z);
+ }
 }
 
-for(let s=0;s<STATIONS-1;s++){
-    const a0 = s*SECTION_POINTS;
-    const a1 = (s+1)*SECTION_POINTS;
-
-    for(let i=0;i<SECTION_POINTS;i++){
-        const j=(i+1)%SECTION_POINTS;
-        const a=a0+i,b=a0+j,c=a1+j,d=a1+i;
-        indices.push(a,b,d,b,c,d);
-    }
+for(let i=0;i<n;i++){
+ const a=i, b=(i+1)%n, c=n+(i+1)%n, d=n+i;
+ indices.push(a,b,c, a,c,d);
 }
-
-const frontCenter=vertices.length/3;
-vertices.push(FRONT_X,(bottomAt(FRONT_X,widthAt(FRONT_X))+topAt(FRONT_X))*0.5,0);
-const rearCenter=vertices.length/3;
-vertices.push(REAR_X,(bottomAt(REAR_X,widthAt(REAR_X))+topAt(REAR_X))*0.5,0);
-
-const frontRing=0;
-const rearRing=(STATIONS-1)*SECTION_POINTS;
-for(let i=0;i<SECTION_POINTS;i++){
-    const j=(i+1)%SECTION_POINTS;
-    indices.push(frontCenter,frontRing+j,frontRing+i);
-    indices.push(rearCenter,rearRing+i,rearRing+j);
+for(let i=1;i<n-1;i++){
+ indices.push(0,i+1,i);
+}
+for(let i=1;i<n-1;i++){
+ indices.push(n,n+i,n+i+1);
 }
 
 const bodyGeo = new THREE.BufferGeometry();
-
-bodyGeo.setAttribute(
-    'position',
-    new THREE.Float32BufferAttribute(vertices,3)
-);
-
+bodyGeo.setAttribute('position', new THREE.Float32BufferAttribute(vertices,3));
 bodyGeo.setIndex(indices);
 bodyGeo.computeVertexNormals();
 
