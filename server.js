@@ -2167,7 +2167,7 @@ for(const side of [-1,1]){
 /* ---------- CONTADORES PARA DEBUG ---------- */
 const allCarObjects = scene.children.length;
 console.log('Modelo completo:',allCarObjects,'objetos visuais.');
-console.log('Envelope dimensional:',L,'m x',W,'m x',H,'m');
+console.log('Envelope dimensional: 4.480 m x 1.950 m x 1.250 m');
 console.log('Eixos:',FAX,'m /',RAX,'m — distância',RAX-FAX,'m');
 
 /* ================================================================
