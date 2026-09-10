@@ -51,27 +51,29 @@ button:active{transform:translateY(1px)}
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-/* ========== DIMENSÕES ========== */
-const BW = 1.90;
+/* ================================================================
+   DIMENSÕES (planta)
+   ================================================================ */
+const BW = 1.90;          // largura total do corpo
 const HALF_BW = BW / 2;
-const WHEEL_R = 0.34;
+const WHEEL_R = 0.335;
 const Y0 = WHEEL_R;
-const ARCH_R = 0.42;
-const BOT = 0.22;
-const FAX = -1.310;
-const RAX = 1.165;
-const TRACK = 0.79;
+const ARCH_R = 0.360;
+const BOT = 0.220;
+const FAX = -1.310;       // eixo dianteiro
+const RAX =  1.165;       // eixo traseiro
+const TRACK = 0.790;      // semi-bitola
 
-/* Tumblehome — topo mais estreito */
+/* Tumblehome bem discreto */
 const TAPER_Y0 = 0.55;
 const TAPER_Y1 = 1.25;
-const TAPER_AMT = 0.18;
+const TAPER_AMT = 0.08;
 function taperScale(y) {
   const t = Math.max(0, Math.min(1, (y - TAPER_Y0) / (TAPER_Y1 - TAPER_Y0)));
   return 1 - t * TAPER_AMT;
 }
 
-/* Arcos das rodas */
+/* Arcos */
 const dyr = BOT - Y0;
 const dxa = Math.sqrt(ARCH_R*ARCH_R - dyr*dyr);
 const A0 = Math.atan2(dyr, dxa);
@@ -79,12 +81,14 @@ const A1 = Math.PI - A0;
 const FA_RX = FAX + dxa;
 const RA_RX = RAX + dxa;
 
-/* ========== CENA ========== */
+/* ================================================================
+   CENA
+   ================================================================ */
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x090b0f);
 
 const camera = new THREE.PerspectiveCamera(38, innerWidth/innerHeight, 0.01, 100);
-camera.position.set(6.2, 2.3, 5.6);
+camera.position.set(6.4, 2.1, 5.6);
 
 const renderer = new THREE.WebGLRenderer({antialias:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));
@@ -100,14 +104,16 @@ const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
 controls.minDistance = 3;
-controls.maxDistance = 14;
+controls.maxDistance = 15;
 controls.target.set(0, 0.58, 0);
 controls.maxPolarAngle = Math.PI * 0.495;
 
-/* ========== LUZ ========== */
-scene.add(new THREE.HemisphereLight(0xe8eef7, 0x20242b, 1.2));
+/* ================================================================
+   LUZ
+   ================================================================ */
+scene.add(new THREE.HemisphereLight(0xe8eef7, 0x20242b, 1.15));
 
-const key = new THREE.DirectionalLight(0xffffff, 2.8);
+const key = new THREE.DirectionalLight(0xffffff, 2.9);
 key.position.set(-5, 8, 5);
 key.castShadow = true;
 key.shadow.mapSize.set(2048,2048);
@@ -120,78 +126,107 @@ key.shadow.camera.bottom = -8;
 key.shadow.bias = -0.0005;
 scene.add(key);
 
-const fill = new THREE.DirectionalLight(0x9db8ff, 0.75);
+const fill = new THREE.DirectionalLight(0x9db8ff, 0.7);
 fill.position.set(6, 4, -6);
 scene.add(fill);
 
-const rimL = new THREE.DirectionalLight(0xffffff, 0.6);
-rimL.position.set(0, 3, -8);
-scene.add(rimL);
+const rim = new THREE.DirectionalLight(0xffffff, 0.55);
+rim.position.set(0, 3, -8);
+scene.add(rim);
 
-/* ========== CHÃO ========== */
+/* ================================================================
+   CHÃO
+   ================================================================ */
 const floor = new THREE.Mesh(
-  new THREE.CircleGeometry(14, 96),
+  new THREE.CircleGeometry(15, 96),
   new THREE.MeshStandardMaterial({color:0x10141a, roughness:0.85, metalness:0.05})
 );
 floor.rotation.x = -Math.PI/2;
 floor.receiveShadow = true;
 scene.add(floor);
 
-const grid = new THREE.GridHelper(14, 28, 0x242a33, 0x171b21);
+const grid = new THREE.GridHelper(15, 30, 0x242a33, 0x171b21);
 grid.position.y = 0.001;
 grid.material.transparent = true;
-grid.material.opacity = 0.55;
+grid.material.opacity = 0.5;
 scene.add(grid);
 
-/* ========== MATERIAIS ========== */
-const bodyMat   = new THREE.MeshPhysicalMaterial({color:0x6b7680, metalness:0.55, roughness:0.32, clearcoat:0.75, clearcoatRoughness:0.14});
+/* ================================================================
+   MATERIAIS
+   ================================================================ */
+const bodyMat   = new THREE.MeshPhysicalMaterial({color:0x707a84, metalness:0.55, roughness:0.32, clearcoat:0.75, clearcoatRoughness:0.14});
 const darkMat   = new THREE.MeshStandardMaterial({color:0x0a0d11, metalness:0.4, roughness:0.5, side:THREE.DoubleSide});
-const glassMat  = new THREE.MeshPhysicalMaterial({color:0x0a1420, metalness:0.35, roughness:0.06, transparent:true, opacity:0.96, side:THREE.DoubleSide});
+const gapMat    = new THREE.MeshStandardMaterial({color:0x000000, metalness:0.1, roughness:0.9});
+const glassMat  = new THREE.MeshPhysicalMaterial({color:0x0b1520, metalness:0.35, roughness:0.06, transparent:true, opacity:0.96, side:THREE.DoubleSide});
 const rubberMat = new THREE.MeshStandardMaterial({color:0x080808, roughness:0.78, metalness:0.03});
 const rimMat    = new THREE.MeshStandardMaterial({color:0xb8bcc2, metalness:0.9, roughness:0.22});
 const hubMat    = new THREE.MeshStandardMaterial({color:0x2a2e33, metalness:0.7, roughness:0.4});
 const headMat   = new THREE.MeshPhysicalMaterial({color:0xdfe9ff, emissive:0xb0d0ff, emissiveIntensity:1.4, roughness:0.1, metalness:0.1});
 const tailMat   = new THREE.MeshPhysicalMaterial({color:0x6a0000, emissive:0x900000, emissiveIntensity:1.8, roughness:0.2});
 
-/* ========== SILHUETA ÚNICA ========== */
-const shape = new THREE.Shape();
+/* ================================================================
+   SILHUETA LATERAL — seguindo a planta ponto por ponto
+   ================================================================
+   Comprimento: -2.24 → 2.24
+   Altura máx: 1.25 (teto)
+   Capô longo e baixo, cabine comprida, fastback, tampa curta
+   ================================================================ */
+const PROFILE = [
+  // Frente
+  [-2.240, 0.220],
+  [-2.240, 0.500],
+  [-2.200, 0.545],
+  [-2.100, 0.575],
+  // Capô (subindo suavemente)
+  [-1.900, 0.615],
+  [-1.700, 0.655],
+  [-1.500, 0.695],
+  [-1.300, 0.725],
+  [-1.100, 0.755],
+  [-0.900, 0.775],
+  // Cowl
+  [-0.820, 0.785],
+  // Para-brisa
+  [-0.650, 0.870],
+  [-0.500, 0.965],
+  [-0.380, 1.060],
+  [-0.280, 1.140],
+  // Teto
+  [-0.150, 1.200],
+  [ 0.000, 1.235],
+  [ 0.180, 1.250],
+  [ 0.350, 1.250],
+  [ 0.520, 1.230],
+  // Vidro traseiro / fastback
+  [ 0.700, 1.170],
+  [ 0.880, 1.100],
+  [ 1.050, 1.020],
+  [ 1.220, 0.940],
+  [ 1.380, 0.880],
+  // Tampa do porta-malas
+  [ 1.550, 0.840],
+  [ 1.720, 0.820],
+  [ 1.900, 0.800],
+  // Traseira
+  [ 2.050, 0.760],
+  [ 2.160, 0.700],
+  [ 2.220, 0.620],
+  [ 2.240, 0.520],
+  [ 2.240, 0.220]
+];
 
-shape.moveTo(-2.24, BOT);
-// Frente
-shape.lineTo(-2.24, 0.50);
-shape.lineTo(-2.18, 0.55);
-// Capô
-shape.lineTo(-1.95, 0.57);
-shape.lineTo(-1.65, 0.60);
-shape.lineTo(-1.35, 0.64);
-shape.lineTo(-1.05, 0.69);
-shape.lineTo(-0.85, 0.72);
-// Para-brisa
-shape.lineTo(-0.65, 0.86);
-shape.lineTo(-0.42, 1.01);
-shape.lineTo(-0.22, 1.13);
-// Teto
-shape.lineTo(-0.02, 1.20);
-shape.lineTo(0.18, 1.24);
-shape.lineTo(0.38, 1.25);
-shape.lineTo(0.58, 1.22);
-// Fastback
-shape.lineTo(0.82, 1.14);
-shape.lineTo(1.08, 1.02);
-shape.lineTo(1.32, 0.90);
-shape.lineTo(1.55, 0.83);
-shape.lineTo(1.80, 0.78);
-shape.lineTo(2.02, 0.74);
-// Traseira
-shape.lineTo(2.18, 0.66);
-shape.lineTo(2.24, 0.56);
-shape.lineTo(2.24, BOT);
-// Fundo com arcos
+const shape = new THREE.Shape();
+shape.moveTo(PROFILE[0][0], PROFILE[0][1]);
+for (let i = 1; i < PROFILE.length; i++) {
+  shape.lineTo(PROFILE[i][0], PROFILE[i][1]);
+}
+// Fundo com arcos das rodas
 shape.lineTo(RA_RX, BOT);
 shape.absarc(RAX, Y0, ARCH_R, A0, A1, false);
 shape.lineTo(FA_RX, BOT);
 shape.absarc(FAX, Y0, ARCH_R, A0, A1, false);
-shape.lineTo(-2.24, BOT);
+shape.lineTo(-2.240, BOT);
+shape.closePath();
 
 const bodyGeom = new THREE.ExtrudeGeometry(shape, {
   depth: BW,
@@ -200,12 +235,12 @@ const bodyGeom = new THREE.ExtrudeGeometry(shape, {
 });
 bodyGeom.translate(0, 0, -HALF_BW);
 
-// Tumblehome (afina o topo)
-const posAttr = bodyGeom.attributes.position;
-for (let i = 0; i < posAttr.count; i++) {
-  const y = posAttr.getY(i);
-  const z = posAttr.getZ(i);
-  posAttr.setZ(i, z * taperScale(y));
+// Tumblehome sutil
+const pa = bodyGeom.attributes.position;
+for (let i = 0; i < pa.count; i++) {
+  const y = pa.getY(i);
+  const z = pa.getZ(i);
+  pa.setZ(i, z * taperScale(y));
 }
 bodyGeom.computeVertexNormals();
 
@@ -214,47 +249,52 @@ bodyMesh.castShadow = true;
 bodyMesh.receiveShadow = true;
 scene.add(bodyMesh);
 
-// Caps internos dos arcos
+// Caps escuros internos dos arcos (não ver oco)
 for (const x of [FAX, RAX]) {
-  const cap = new THREE.Mesh(
-    new THREE.CircleGeometry(ARCH_R * 0.97, 32),
-    darkMat
-  );
+  const cap = new THREE.Mesh(new THREE.CircleGeometry(ARCH_R * 0.97, 32), darkMat);
   cap.position.set(x, Y0, 0);
   scene.add(cap);
 }
 
-/* ========== JANELAS LATERAIS ========== */
-const winShape = new THREE.Shape();
-winShape.moveTo(-0.68, 0.80);
-winShape.lineTo(-0.50, 0.90);
-winShape.lineTo(-0.22, 1.08);
-winShape.lineTo(0.02, 1.17);
-winShape.lineTo(0.32, 1.19);
-winShape.lineTo(0.58, 1.14);
-winShape.lineTo(0.85, 1.02);
-winShape.lineTo(1.10, 0.87);
-winShape.lineTo(1.02, 0.82);
-winShape.closePath();
+/* ================================================================
+   VIDROS LATERAIS — encostam no taper do corpo
+   ================================================================ */
+const sideWinShape = new THREE.Shape();
+sideWinShape.moveTo(-0.680, 0.800);
+sideWinShape.lineTo(-0.540, 0.905);
+sideWinShape.lineTo(-0.400, 1.010);
+sideWinShape.lineTo(-0.290, 1.115);
+sideWinShape.lineTo(-0.160, 1.180);
+sideWinShape.lineTo( 0.040, 1.215);
+sideWinShape.lineTo( 0.280, 1.220);
+sideWinShape.lineTo( 0.480, 1.200);
+sideWinShape.lineTo( 0.680, 1.145);
+sideWinShape.lineTo( 0.860, 1.075);
+sideWinShape.lineTo( 1.030, 0.995);
+sideWinShape.lineTo( 1.180, 0.920);
+sideWinShape.lineTo( 1.280, 0.870);
+sideWinShape.lineTo( 1.240, 0.830);
+sideWinShape.closePath();
 
-const sideWinGeom = new THREE.ShapeGeometry(winShape);
+const sideWinGeom = new THREE.ShapeGeometry(sideWinShape);
 
 for (const s of [-1, 1]) {
   const win = new THREE.Mesh(sideWinGeom, glassMat);
-  win.position.z = s * (taperScale(0.98) * HALF_BW + 0.004);
-  if (s < 0) win.scale.z = -1;
+  win.position.z = s * (taperScale(1.0) * HALF_BW - 0.005);
   win.renderOrder = 1;
+  if (s < 0) win.scale.z = -1;
   scene.add(win);
 }
 
-/* ========== PARA-BRISA E VIDRO TRASEIRO ========== */
-function slopedGlass(x1, y1, x2, y2, mat) {
+/* ================================================================
+   PARA-BRISA E VIDRO TRASEIRO
+   ================================================================ */
+function slopedGlass(x1, y1, x2, y2, mat, inset = 0.03) {
   const dx = x2 - x1, dy = y2 - y1;
   const len = Math.hypot(dx, dy);
   const ang = Math.atan2(dy, dx);
   const midY = (y1 + y2) / 2;
-  const halfW = taperScale(midY) * HALF_BW - 0.03;
-
+  const halfW = taperScale(midY) * HALF_BW - inset;
   const m = new THREE.Mesh(
     new THREE.BoxGeometry(len + 0.02, 0.015, halfW * 2),
     mat
@@ -265,10 +305,12 @@ function slopedGlass(x1, y1, x2, y2, mat) {
   m.renderOrder = 1;
   return m;
 }
-scene.add(slopedGlass(-0.83, 0.74, -0.22, 1.13, glassMat));
-scene.add(slopedGlass(0.58, 1.21, 1.30, 0.89, glassMat));
+scene.add(slopedGlass(-0.84, 0.780, -0.27, 1.150, glassMat));
+scene.add(slopedGlass( 0.53, 1.230,  1.34, 0.885, glassMat));
 
-/* ========== RODAS ========== */
+/* ================================================================
+   RODAS
+   ================================================================ */
 function makeWheel(x, z, side) {
   const g = new THREE.Group();
   g.position.set(x, Y0, z);
@@ -315,14 +357,16 @@ makeWheel(FAX, -TRACK, -1);
 makeWheel(RAX,  TRACK,  1);
 makeWheel(RAX, -TRACK, -1);
 
-/* ========== FRENTE ========== */
-const grille = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.14, 1.05), darkMat);
+/* ================================================================
+   FRENTE
+   ================================================================ */
+const grille = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.16, 1.10), darkMat);
 grille.position.set(-2.245, 0.44, 0);
 scene.add(grille);
 
 for (const s of [-1, 1]) {
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.12, 0.42), headMat);
-  head.position.set(-2.245, 0.58, s * 0.60);
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.11, 0.42), headMat);
+  head.position.set(-2.245, 0.56, s * 0.62);
   scene.add(head);
 }
 for (const s of [-1, 1]) {
@@ -331,8 +375,10 @@ for (const s of [-1, 1]) {
   scene.add(intake);
 }
 
-/* ========== TRASEIRA ========== */
-const tailBar = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.14, 1.25), tailMat);
+/* ================================================================
+   TRASEIRA
+   ================================================================ */
+const tailBar = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.13, 1.25), tailMat);
 tailBar.position.set(2.245, 0.58, 0);
 scene.add(tailBar);
 
@@ -347,7 +393,9 @@ for (const s of [-1, 1]) {
   scene.add(ex);
 }
 
-/* ========== DETALHES ========== */
+/* ================================================================
+   DETALHES (retrovisores, puxadores, saias)
+   ================================================================ */
 for (const s of [-1, 1]) {
   const arm = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.02, 0.10), darkMat);
   arm.position.set(-0.62, 0.90, s * 0.80);
@@ -360,29 +408,56 @@ for (const s of [-1, 1]) {
   const handle = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.022, 0.022), hubMat);
   handle.position.set(0.20, 0.72, s * (taperScale(0.72) * HALF_BW + 0.005));
   scene.add(handle);
+
+  const skirt = new THREE.Mesh(new THREE.BoxGeometry(1.40, 0.07, 0.06), darkMat);
+  skirt.position.set(0.0, 0.175, s * (HALF_BW - 0.03));
+  scene.add(skirt);
 }
 
-/* ========== VISTAS ========== */
+/* ================================================================
+   LINHAS DE PAINEL — mostram as separações dos "blocos"
+   ================================================================ */
+function panelLine(pts, mat = gapMat) {
+  const g = new THREE.BufferGeometry().setFromPoints(pts);
+  const line = new THREE.Line(g, new THREE.LineBasicMaterial({color: 0x000000}));
+  scene.add(line);
+}
+for (const s of [-1, 1]) {
+  panelLine([
+    new THREE.Vector3(-0.82, 0.79, s * (taperScale(0.79) * HALF_BW + 0.003)),
+    new THREE.Vector3(-0.27, 1.15, s * (taperScale(1.15) * HALF_BW + 0.003))
+  ]);
+  panelLine([
+    new THREE.Vector3(0.53, 1.23, s * (taperScale(1.23) * HALF_BW + 0.003)),
+    new THREE.Vector3(1.34, 0.885, s * (taperScale(0.885) * HALF_BW + 0.003))
+  ]);
+}
+
+/* ================================================================
+   VISTAS
+   ================================================================ */
 function setView(pos, target = [0, 0.58, 0]) {
   camera.position.set(...pos);
   controls.target.set(...target);
   controls.update();
 }
-document.getElementById('view3d').onclick    = () => setView([6.2, 2.3, 5.6], [0, 0.58, 0]);
-document.getElementById('viewFront').onclick = () => setView([-7.5, 1.3, 0],  [0, 0.55, 0]);
-document.getElementById('viewSide').onclick  = () => setView([0, 1.15, 8.0],   [0, 0.66, 0]);
-document.getElementById('viewTop').onclick   = () => setView([0, 8.5, 0.01],   [0, 0.20, 0]);
+document.getElementById('view3d').onclick    = () => setView([6.4, 2.1, 5.6], [0, 0.58, 0]);
+document.getElementById('viewFront').onclick = () => setView([-7.6, 1.2, 0],  [0, 0.55, 0]);
+document.getElementById('viewSide').onclick  = () => setView([0, 1.1, 8.2],    [0, 0.65, 0]);
+document.getElementById('viewTop').onclick   = () => setView([0, 8.6, 0.01],   [0, 0.20, 0]);
 
 let shellMode = false;
 document.getElementById('shell').onclick = () => {
   shellMode = !shellMode;
-  bodyMat.color.set(shellMode ? 0xa0a8b0 : 0x6b7680);
+  bodyMat.color.set(shellMode ? 0xa0a8b0 : 0x707a84);
   bodyMat.metalness = shellMode ? 0.35 : 0.55;
   bodyMat.roughness = shellMode ? 0.55 : 0.32;
   document.getElementById('shell').textContent = shellMode ? 'Acabamento' : 'Carroceria';
 };
 
-/* ========== LOOP ========== */
+/* ================================================================
+   LOOP
+   ================================================================ */
 function animate() {
   requestAnimationFrame(animate);
   controls.update();
