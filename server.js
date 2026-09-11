@@ -26,6 +26,7 @@ button:active{transform:translateY(1px)}
 </head>
 <body>
 <div id="app"></div>
+<div id="status" style="position:fixed;left:18px;top:145px;z-index:10;padding:10px 12px;border-radius:9px;background:rgba(0,0,0,.78);color:#fff;font:12px Arial">Inicializando 3D…</div>
 <div class="hud">
  <b>Modelo 3D — carroceria em blocos</b><br>
  <small>Construção por volumes sólidos, seguindo a silhueta da carroceria real e da planta.</small><br>
@@ -44,16 +45,9 @@ button:active{transform:translateY(1px)}
 </div>
 <div class="legend">Modelo detalhado: ~1.500 peças individuais — carroceria, interior, motor, chassi, suspensão, freios, escapamento, chicotes, tubulações e detalhes.</div>
 
-<script type="importmap">
-{ "imports": {
-  "three":"https://cdn.jsdelivr.net/npm/three@0.179.1/build/three.module.js",
-  "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.179.1/examples/jsm/"
-}}
-</script>
-
-<script type="module">
-import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+<script src="https://cdn.jsdelivr.net/npm/three@0.179.1/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.179.1/examples/js/controls/OrbitControls.js"></script>
+<script>
 
 /* ================================================================
    DIMENSÕES PRINCIPAIS — planta técnica
@@ -87,7 +81,8 @@ scene.fog = new THREE.Fog(0x090b0f, 14, 30);
 const camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 0.01, 100);
 camera.position.set(6.4, 2.1, 5.6);
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+let renderer;
+try { renderer = new THREE.WebGLRenderer({ antialias: true }); } catch(e) { const st=document.getElementById('status'); st.style.background='#5b1515'; st.textContent='WebGL indisponível: '+e.message; throw e; }
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
@@ -2203,6 +2198,7 @@ function animate() {
   renderer.render(scene, camera);
 }
 animate();
+const st=document.getElementById('status'); st.textContent='3D carregado'; setTimeout(()=>st.style.display='none',1500);
 
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
