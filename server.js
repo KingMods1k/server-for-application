@@ -45,9 +45,11 @@ button:active{transform:translateY(1px)}
 </div>
 <div class="legend">Modelo detalhado: ~1.500 peças individuais — carroceria, interior, motor, chassi, suspensão, freios, escapamento, chicotes, tubulações e detalhes.</div>
 
-<script src="https://cdn.jsdelivr.net/npm/three@0.179.1/build/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.179.1/examples/js/controls/OrbitControls.js"></script>
-<script>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.179.1/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.179.1/examples/jsm/"}}</script>
+<script>window.addEventListener("error",e=>{const st=document.getElementById("status"); if(st) {st.style.background="#5b1515"; st.textContent="Erro 3D: "+(e.message||"falha");}}); window.addEventListener("unhandledrejection",e=>{const st=document.getElementById("status"); if(st) {st.style.background="#5b1515"; st.textContent="Erro 3D: "+String(e.reason||"falha");}});</script>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
 /* ================================================================
    DIMENSÕES PRINCIPAIS — planta técnica
