@@ -100,7 +100,9 @@ const sun = new THREE.DirectionalLight(0xffffff, 2.5);
 sun.position.set(-4, 7, 5);
 sun.castShadow = true;
 scene.add(sun);
-scene.add(new THREE.DirectionalLight(0xffffff, 0.65)).position.set(4,3,-5);
+const fillLight = new THREE.DirectionalLight(0xffffff, 0.65);
+fillLight.position.set(4,3,-5);
+scene.add(fillLight);
 
 const floor = new THREE.Mesh(
   new THREE.CircleGeometry(14, 96),
