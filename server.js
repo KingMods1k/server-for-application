@@ -59,6 +59,8 @@ const WHEEL_R = 0.335, WHEEL_W = 0.240;
 const Y0 = WHEEL_R;
 const ARCH_R = 0.360, BOT = 0.220;
 const FAX = -1.310, RAX = 1.165, TRACK = 0.790;
+const FRONT = -2.240;
+const REAR  =  2.240;
 
 const TAPER_Y0 = 0.55, TAPER_Y1 = 1.25, TAPER_AMT = 0.09;
 function taperScale(y) {
