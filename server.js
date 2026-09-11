@@ -108,10 +108,23 @@ grid.material.transparent = true;
 grid.material.opacity = .45;
 scene.add(grid);
 
+/* Vidro: material simples, translúcido, SEM roughness/metalness que
+   causavam o padrão listrado com a luz direcional forte. */
+const glassMat = new THREE.MeshPhysicalMaterial({
+  color: 0x0d1520,
+  metalness: 0,
+  roughness: 0.05,
+  transmission: 0.55,
+  transparent: true,
+  opacity: 0.85,
+  clearcoat: 0.3,
+  side: THREE.DoubleSide
+});
+
 const M = {
   body: new THREE.MeshPhysicalMaterial({color:0x69747e, metalness:.58, roughness:.28, clearcoat:.8, clearcoatRoughness:.12}),
   body2: new THREE.MeshPhysicalMaterial({color:0x505a63, metalness:.52, roughness:.34}),
-  glass: new THREE.MeshPhysicalMaterial({color:0x101923, metalness:.05, roughness:.16, transmission:.08, transparent:true, opacity:.92}),
+  glass: glassMat,
   rubber: new THREE.MeshStandardMaterial({color:0x080a0d, roughness:.72, metalness:.05}),
   rim: new THREE.MeshStandardMaterial({color:0x8b949c, roughness:.22, metalness:.88}),
   lamp: new THREE.MeshStandardMaterial({color:0xdce8f2, roughness:.16, metalness:.3}),
@@ -139,7 +152,6 @@ function box(w,h,d,x,y,z,mat,name,parent=shell){
   return o;
 }
 
-/* Interpolação linear entre pontos de controle (x -> valor) */
 function interp(x, pts){
   if(x <= pts[0][0]) return pts[0][1];
   if(x >= pts[pts.length-1][0]) return pts[pts.length-1][1];
@@ -154,10 +166,7 @@ function interp(x, pts){
 }
 
 /* ================================================================
-   PONTOS DE CONTROLE DA PLANTA (x em metros a partir do centro,
-   valores lidos da vista lateral e superior do desenho técnico)
-
-   TOPO da carroceria (altura do teto/capô/tampa em cada posição x)
+   PONTOS DE CONTROLE DA PLANTA
    ================================================================ */
 const topProfile = [
   [FRONT_X,      0.44],
@@ -182,7 +191,6 @@ const topProfile = [
   [REAR_X,       0.400]
 ];
 
-/* BASE da carroceria (linha inferior / soleira) em cada posição x */
 const bottomProfile = [
   [FRONT_X,      0.24],
   [-2.10,        0.20],
@@ -192,9 +200,6 @@ const bottomProfile = [
   [REAR_X,       0.28]
 ];
 
-/* LARGURA da carroceria em cada posição x (vista de cima):
-   estreita na frente, alarga nas caixas de roda, um pouco mais
-   estreita na cabine (efeito "cintura"), alarga de novo atrás. */
 const widthProfile = [
   [FRONT_X,        1.05],
   [-2.10,          1.62],
@@ -210,8 +215,6 @@ const widthProfile = [
   [REAR_X,         1.00]
 ];
 
-/* LARGURA DA CABINE (vidros/teto) em cada x — sempre menor que a
-   largura total da carroceria, criando o "degrau" das colunas. */
 const cabinTop = -0.72, cabinBottom = 1.16;
 const cabinWidthProfile = [
   [cabinTop,    1.50],
@@ -221,14 +224,20 @@ const cabinWidthProfile = [
   [cabinBottom, 1.44]
 ];
 
+/* Altura onde a "cintura" da carroceria termina e o vidro começa,
+   interpolada suavemente na frente/trás do habitáculo (evita o
+   para-brisa "flutuando" fora da carroceria). */
+const beltProfile = [
+  [cabinTop-0.15, 0.73],
+  [cabinTop,      0.73],
+  [cabinBottom,   0.76],
+  [cabinBottom+0.15, 0.76]
+];
+
 /* ================================================================
    GERAÇÃO DA CARROCERIA POR FATIAS FINAS
-   Uma fatia (box) a cada 3cm ao longo do comprimento. Cada fatia usa
-   a altura (topo-base) e largura exatas daquele ponto x, interpoladas
-   dos perfis acima — isso segue a curva real da planta com precisão,
-   em vez de aproximar com poucos blocos grandes.
    ================================================================ */
-const STEP = 0.03; // 3cm por fatia -> ~150 fatias no comprimento
+const STEP = 0.03;
 let sliceCount = 0;
 for(let x = FRONT_X; x <= REAR_X; x += STEP){
   const top = interp(x, topProfile);
@@ -238,16 +247,15 @@ for(let x = FRONT_X; x <= REAR_X; x += STEP){
   const cy = (top + bottom) / 2;
 
   const isCabin = x >= cabinTop && x <= cabinBottom;
-  const cabinH = isCabin ? Math.max(top - 0.72, 0) : 0;
-  const lowerH = isCabin ? Math.max(0.72 - bottom, 0.02) : h;
+  const belt = isCabin ? interp(x, beltProfile) : top;
+  const cabinH = isCabin ? Math.max(top - belt, 0) : 0;
+  const lowerH = isCabin ? Math.max(belt - bottom, 0.02) : h;
 
   if(isCabin){
-    /* Parte inferior da fatia = carroceria (largura total) */
     box(STEP, lowerH, w, x, bottom + lowerH/2, 0, M.body, 'fatia-carroceria');
-    /* Parte superior da fatia = cabine/vidro (largura menor, material vidro) */
-    if(cabinH > 0.02){
+    if(cabinH > 0.015){
       const cw = interp(x, cabinWidthProfile);
-      box(STEP, cabinH, cw, x, 0.72 + cabinH/2, 0, M.glass, 'fatia-cabine');
+      box(STEP, cabinH, cw, x, belt + cabinH/2, 0, M.glass, 'fatia-cabine');
     }
   } else {
     box(STEP, h, w, x, cy, 0, M.body, 'fatia-carroceria');
@@ -255,25 +263,24 @@ for(let x = FRONT_X; x <= REAR_X; x += STEP){
   sliceCount++;
 }
 
-/* Teto sólido por cima da cabine (fecha a parte de cima do vidro) */
-for(let x = cabinTop+0.10; x <= cabinBottom-0.10; x += STEP){
+/* Teto sólido por cima da cabine, encostado direto no topo do vidro
+   (sem gap, sem rotação — evita a sensação de peça flutuando). */
+for(let x = cabinTop+0.12; x <= cabinBottom-0.12; x += STEP){
   const top = interp(x, topProfile);
-  const cw = interp(x, cabinWidthProfile) - 0.10;
-  box(STEP, 0.06, cw, x, top - 0.03, 0, M.body, 'fatia-teto');
+  const cw = interp(x, cabinWidthProfile) - 0.08;
+  box(STEP, 0.05, cw, x, top - 0.025, 0, M.body, 'fatia-teto');
 }
 
-/* Colunas A e C nos limites da cabine */
+/* Colunas A e C — encostadas exatamente na borda da cabine, sem rotação
+   solta (evita peças "flutuando" fora da carroceria). */
 for(const z of [-HALF_W+0.06, HALF_W-0.06]){
-  box(.08, 0.46, .08, cabinTop, 0.96, z, M.body2, 'coluna-A');
-  box(.08, 0.40, .08, cabinBottom, 0.94, z, M.body2, 'coluna-C');
-}
+  const beltA = interp(cabinTop, beltProfile);
+  const topA = interp(cabinTop, topProfile);
+  box(.07, topA-beltA, .07, cabinTop, (topA+beltA)/2, z, M.body2, 'coluna-A');
 
-/* Para-brisa e vidro traseiro (planos inclinados, visuais) */
-{
-  const wf = box(.04,.50,1.50,-.83,1.02,0,M.glass,'para-brisa');
-  wf.rotation.z = -0.66;
-  const rg = box(.04,.44,1.48,1.00,0.98,0,M.glass,'vidro-traseiro');
-  rg.rotation.z = 0.60;
+  const beltC = interp(cabinBottom, beltProfile);
+  const topC = interp(cabinBottom, topProfile);
+  box(.07, topC-beltC, .07, cabinBottom, (topC+beltC)/2, z, M.body2, 'coluna-C');
 }
 
 /* Para-choques */
