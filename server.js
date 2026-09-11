@@ -164,19 +164,14 @@ const originOffset = -LENGTH*M2MM/2;
    usando HALFW_PROFILE espelhado) extrudado desde o chão até a linha
    de cintura (60% da altura em cada X). Um único sólido poligonal.
    ================================================================ */
-const beltRatio = 0.60;
+const beltRatio = 0.42;
 const N_CONTOUR = 46;
 function buildHullGeometry(){
-  const shape = new THREE.Shape();
   const pts = [];
   for(let i=0;i<=N_CONTOUR;i++){
     const x = (i/N_CONTOUR)*LENGTH;
     pts.push([x, interp(x, HALFW_PROFILE)]);
   }
-  shape.moveTo(pts[0][0]*M2MM, 0);
-  for(const [x,hw] of pts) shape.lineTo(x*M2MM, hw*M2MM);
-  for(let i=pts.length-1;i>=0;i--) shape.lineTo(pts[i][0]*M2MM, -pts[i][1]*M2MM);
-  shape.closePath();
 
   // extrusão em Y variável não é suportada nativamente — construímos
   // manualmente vértices topo/base por ponto de contorno.
