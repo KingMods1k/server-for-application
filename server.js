@@ -249,7 +249,7 @@ arch(REAR_AXLE,-HALF_W-.006); arch(REAR_AXLE,HALF_W+.006);
 /* Rodas: únicas peças que ficam deliberadamente fora da carroceria. */
 function wheel(x,z,side){
   const g = new THREE.Group();
-  g.name = `roda-${side}-${x<0?'dianteira':'traseira'}`;
+  g.name = \`roda-\${side}-\${x<0?'dianteira':'traseira'}\`;
   g.position.set(x,GROUND,z);
   wheels.add(g);
   const tire = new THREE.Mesh(new THREE.CylinderGeometry(WHEEL_R,WHEEL_R,WHEEL_W,48),M.rubber);
