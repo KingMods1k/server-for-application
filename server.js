@@ -128,15 +128,20 @@ function interp(x, pts){
    longitudinal x (0=nariz,1=traseira). Isso dá a curvatura real (ombros
    largos, cintura estreita) em vez de um retângulo. */
 function sectionShape(hRel, mixRearT){
-  function sampleNorm(pts, hRel){
+  // Normaliza ambas as seções pelo MESMO máximo (o maior dos dois), assim
+  // a proporção frente/traseira fica preservada e nao "infla" o nariz.
+  function sampleNorm(pts, hRel, refMax){
     const maxH = pts[pts.length-1][0];
     const h = hRel*maxH;
-    const maxW = Math.max(...pts.map(p=>p[1]));
     const w = interp(h, pts);
-    return w/maxW;
+    return w/refMax;
   }
-  const f = sampleNorm(FRONT_SECTION, hRel);
-  const r = sampleNorm(REAR_SECTION, hRel);
+  const refMax = Math.max(
+    ...FRONT_SECTION.map(p=>p[1]),
+    ...REAR_SECTION.map(p=>p[1])
+  );
+  const f = sampleNorm(FRONT_SECTION, hRel, refMax);
+  const r = sampleNorm(REAR_SECTION, hRel, refMax);
   return f + (r-f)*mixRearT;
 }
 
@@ -233,12 +238,14 @@ function buildBodyGeometry(){
 
   // pontos de referência para mistura frente/trás (0 = nariz, 1 = traseira)
   const rings = [];
+  let bottom0, top0; // guardam topo/base do primeiro anel (X=0), p/ fechar o nariz
 
   for(let i=0;i<=N_LONG;i++){
     const t = i/N_LONG;
     const x = t*LENGTH;
     const top = interp(x, TOP_PROFILE);
     const bottom = interp(x, BOTTOM_PROFILE);
+    if(i===0){ top0 = top; bottom0 = bottom; }
     const halfW = interp(x, WIDTH_PROFILE)/2;
     const mixRearT = t; // mistura linear da forma de seção ao longo do X
 
@@ -280,6 +287,18 @@ function buildBodyGeometry(){
       const c = (i+1)*ringLen+j;
       const d = (i+1)*ringLen+j+1;
       indices.push(a,c,b, b,c,d);
+    }
+  }
+
+  // Fecha a ponta do nariz (primeiro anel, i=0): adiciona um vértice central
+  // na mesma posição X e liga em leque, tampando o buraco frontal.
+  {
+    const [x0,y0] = rings[0][0];
+    const centerIdx = positions.length/3;
+    positions.push(x0*M2MM, (bottom0+top0)/2*M2MM, 0);
+    uvs.push(0,0);
+    for(let j=0;j<N_RING;j++){
+      indices.push(centerIdx, j+1, j);
     }
   }
 
