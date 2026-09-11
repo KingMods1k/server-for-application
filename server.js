@@ -62,9 +62,14 @@ const HALF_W = WIDTH / 2;
 const HEIGHT = 1.250;
 const WHEEL_R = 0.335;
 const WHEEL_W = 0.235;
+/* Origem X = centro do carro (LENGTH/2 = 2.240).
+   Frente da carroceria fica em -2.240, traseira em +2.240.
+   Balanço dianteiro 930mm -> eixo dianteiro a -2.240+0.930 = -1.310
+   Entre-eixos 2475mm -> eixo traseiro a -1.310+2.475 = 1.165
+   Balanço traseiro 1075mm -> confere: 1.165+1.075 = 2.240 ✔ */
 const FRONT_AXLE = -1.310;
 const REAR_AXLE = 1.165;
-const WHEEL_Z = HALF_W + 0.055;
+const WHEEL_Z = HALF_W + 0.045;
 const GROUND = WHEEL_R;
 
 const scene = new THREE.Scene();
@@ -177,23 +182,25 @@ box(3.72,.16,.12,0.08,.34,-HALF_W+.035,M.body2,'soleira-esquerda');
 box(3.72,.16,.12,0.08,.34, HALF_W-.035,M.body2,'soleira-direita');
 
 /* Capô e tampa traseira: superfícies largas, sem atravessar a cabine. */
-box(.72,.075,1.72,-1.73,.785,0,M.body,'capo');
-box(.62,.065,1.70,1.76,.80,0,M.body,'tampa-traseira');
+box(.90,.075,1.78,-1.73,.775,0,M.body,'capo');
+box(.78,.065,1.76,1.78,.79,0,M.body,'tampa-traseira');
 
-/* Teto, formado por painéis longitudinais e fechado por toda a largura. */
+/* Teto, formado por painéis longitudinais e fechado por toda a largura.
+   Peça central de emenda evita o vão entre teto-dianteiro e teto-traseiro. */
 box(1.18,.085,1.62,-.33,1.215,0,M.body,'teto-dianteiro');
 box(.86,.085,1.60,.66,1.145,0,M.body,'teto-traseiro');
+box(.14,.09,1.60,.30,1.18,0,M.body,'teto-emenda');
 
 /* Colunas e contorno das janelas. */
 for(const z of [-.82,.82]){
-  box(.085,.64,.075,-.96,.98,z,M.body2,'coluna-A');
-  box(.075,.50,.075,.72,1.00,z,M.body2,'coluna-B');
-  box(.075,.46,.075,1.20,.91,z,M.body2,'coluna-C');
+  box(.085,.66,.075,-.90,1.00,z,M.body2,'coluna-A');
+  box(.075,.52,.075,.72,1.02,z,M.body2,'coluna-B');
+  box(.075,.48,.075,1.22,.92,z,M.body2,'coluna-C');
 }
 
 /* Vidros laterais — ficam ENTRE as colunas, não fora delas. */
 const windowPts = [
-  [-.87,.99],[-.66,1.16],[-.18,1.19],[.53,1.12],[.67,1.00],
+  [-.87,.99],[-.66,1.185],[-.18,1.215],[.53,1.145],[.67,1.00],
   [.63,.84],[-.72,.84],[-.84,.90]
 ];
 for(const z of [-.785,.785]) panelShape(windowPts,.025,z,M.glass,'vidro-lateral');
