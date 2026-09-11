@@ -164,7 +164,7 @@ const originOffset = -LENGTH*M2MM/2;
    usando HALFW_PROFILE espelhado) extrudado desde o chão até a linha
    de cintura (60% da altura em cada X). Um único sólido poligonal.
    ================================================================ */
-const beltRatio = 0.42;
+const beltRatio = 1.0; // casco sobe até a altura real do TOP_PROFILE — sem vão
 const N_CONTOUR = 46;
 function buildHullGeometry(){
   const pts = [];
@@ -176,8 +176,13 @@ function buildHullGeometry(){
   // extrusão em Y variável não é suportada nativamente — construímos
   // manualmente vértices topo/base por ponto de contorno.
   const positions = [], indices = [];
+  const CABIN_X0_ = 1180, CABIN_X1_ = 3550;
   const ring = (side) => pts.map(([x,hw])=>{
-    const top = BOTTOM_Y + (interp(x,TOP_PROFILE)-BOTTOM_Y)*beltRatio;
+    const isCabin = x >= CABIN_X0_ && x <= CABIN_X1_;
+    const fullTop = interp(x,TOP_PROFILE);
+    // na região da cabine, o casco para na linha de cintura (deixa vão
+    // para o vidro); fora da cabine (capô/traseira), sobe até o topo real.
+    const top = isCabin ? (BOTTOM_Y + (fullTop-BOTTOM_Y)*0.44) : fullTop;
     return [x, BOTTOM_Y, side*hw, x, top, side*hw];
   });
   const left = ring(-1), right = ring(1);
@@ -228,6 +233,10 @@ shell.add(hull);
    BLOCO 2 — CAPÔ: painel único inclinado do nariz (x=100) até a base
    do para-brisa (x=999), como polígono trapezoidal simples.
    ================================================================ */
+/* ================================================================
+   BLOCO 2 — CAPÔ: painel único inclinado do nariz (x=100) até a base
+   do para-brisa (x=999), como polígono trapezoidal simples.
+   ================================================================ */
 function box(wMm, hMm, dMm, xMm, yMm, zMm, mat, name, parent=shell, rz=0){
   const o = new THREE.Mesh(new THREE.BoxGeometry(wMm*M2MM, hMm*M2MM, dMm*M2MM), mat);
   o.name = name;
@@ -238,62 +247,67 @@ function box(wMm, hMm, dMm, xMm, yMm, zMm, mat, name, parent=shell, rz=0){
   return o;
 }
 
-const capoX0 = 100, capoX1 = 999;
-{
-  const hw0 = interp(capoX0, HALFW_PROFILE)*0.94, hw1 = interp(capoX1, HALFW_PROFILE)*0.94;
-  const y0 = interp(capoX0, TOP_PROFILE), y1 = interp(capoX1, TOP_PROFILE);
-  const xC=(capoX0+capoX1)/2, yC=(y0+y1)/2, hC=Math.hypot(capoX1-capoX0,y1-y0), wC=(hw0+hw1);
-  const capo = box(hC, 18, wC, xC, yC, 0, M.body2, 'capo');
-  capo.rotation.z = Math.atan2(y1-y0, capoX1-capoX0);
+/* Função auxiliar: altura da cintura da cabine (mesmo cálculo usado no
+   casco) — usada para ancorar para-brisa, vidros e vigia sem vão nem
+   sobreposição. */
+function cabinBeltY(x){
+  return BOTTOM_Y + (interp(x,TOP_PROFILE)-BOTTOM_Y)*0.44;
 }
 
+/* Capô: já é a própria superfície do casco entre 100-999mm (o casco
+   agora sobe até o topo real ali). Nenhum painel extra necessário. */
+const capoX0 = 100, capoX1 = 999;
+
 /* ================================================================
-   BLOCO 3 — PARA-BRISA: painel trapezoidal único inclinado.
+   BLOCO 3 — PARA-BRISA: painel trapezoidal único inclinado, indo da
+   cintura da cabine (em capoX1, onde o casco já é o topo real do
+   capô) até o início do teto (CABIN_X0, na cintura da cabine ali).
    ================================================================ */
 const CABIN_X0 = 1180, CABIN_X1 = 3550;
 {
-  const y0 = interp(capoX1,TOP_PROFILE)*beltRatio + BOTTOM_Y*(1-beltRatio);
-  const beltY = BOTTOM_Y + (interp(capoX1,TOP_PROFILE)-BOTTOM_Y)*beltRatio;
-  const topY = interp(CABIN_X0, TOP_PROFILE);
-  const xC=(capoX1+CABIN_X0)/2, yC=(beltY+topY)/2;
+  const y0 = interp(capoX1, TOP_PROFILE); // topo real do capô nesse X
+  const y1 = interp(CABIN_X0, TOP_PROFILE); // altura do teto no início da cabine
+  const xC=(capoX1+CABIN_X0)/2, yC=(y0+y1)/2;
   const hw = interp(CABIN_X0,HALFW_PROFILE)*0.86;
-  const wsWind = box(Math.hypot(CABIN_X0-capoX1, topY-beltY), 14, hw*2, xC, yC, 0, M.glass, 'para-brisa');
-  wsWind.rotation.z = Math.atan2(topY-beltY, CABIN_X0-capoX1);
+  const wsWind = box(Math.hypot(CABIN_X0-capoX1, y1-y0), 14, hw*2, xC, yC, 0, M.glass, 'para-brisa');
+  wsWind.rotation.z = Math.atan2(y1-y0, CABIN_X0-capoX1);
 }
 
 /* ================================================================
-   BLOCO 4 — TETO: painel único plano/levemente arqueado cobrindo a
-   cabine, mais estreito que o casco.
+   BLOCO 4 — TETO: painel único cobrindo a cabine, na altura real do
+   TOP_PROFILE (que é onde o casco NÃO sobe na região da cabine — o
+   vão fica exatamente preenchido por este painel).
    ================================================================ */
 {
   const roofX0=CABIN_X0+80, roofX1=CABIN_X1-260;
   const y0=interp(roofX0,TOP_PROFILE), y1=interp(roofX1,TOP_PROFILE);
   const hw0=interp(roofX0,HALFW_PROFILE)*0.60, hw1=interp(roofX1,HALFW_PROFILE)*0.60;
   const xC=(roofX0+roofX1)/2, yC=(y0+y1)/2, hw=(hw0+hw1)/2;
-  box(roofX1-roofX0, 30, hw*2, xC, yC, 0, M.body2, 'teto');
+  box(roofX1-roofX0, 26, hw*2, xC, yC, 0, M.body2, 'teto');
 }
 
 /* ================================================================
-   BLOCO 5 — VIDROS LATERAIS: painel trapezoidal por lado, entre a
-   linha de cintura e o teto.
+   BLOCO 5 — VIDROS LATERAIS: preenche exatamente o vão entre a
+   cintura da cabine (topo do casco ali) e a base do teto.
    ================================================================ */
 for(const side of [-1,1]){
-  const beltY = BOTTOM_Y + (interp((CABIN_X0+CABIN_X1)/2,TOP_PROFILE)-BOTTOM_Y)*beltRatio;
-  const topY = interp((CABIN_X0+CABIN_X1)/2, TOP_PROFILE)-15;
-  const hw = interp((CABIN_X0+CABIN_X1)/2, HALFW_PROFILE)*0.62;
-  box(CABIN_X1-CABIN_X0-260, topY-beltY, 20, (CABIN_X0+CABIN_X1)/2+70, (beltY+topY)/2, side*hw, M.glass, 'vidro-lateral');
+  const xMid = (CABIN_X0+CABIN_X1)/2;
+  const beltY = cabinBeltY(xMid);
+  const roofY = interp(xMid, TOP_PROFILE)-13;
+  const hw = interp(xMid, HALFW_PROFILE)*0.60;
+  box(CABIN_X1-CABIN_X0-360, roofY-beltY, 18, xMid+70, (beltY+roofY)/2, side*hw, M.glass, 'vidro-lateral');
 }
 
 /* ================================================================
    BLOCO 6 — VIGIA TRASEIRA: painel inclinado descendo da traseira do
-   teto até a tampa do porta-malas.
+   teto (altura real) até a cintura da cabine na ponta traseira.
    ================================================================ */
 {
   const roofEndX = CABIN_X1-260;
   const y0 = interp(roofEndX,TOP_PROFILE);
-  const y1 = interp(CABIN_X1,TOP_PROFILE)*0.72;
+  const y1 = cabinBeltY(CABIN_X1);
   const xC=(roofEndX+CABIN_X1)/2, yC=(y0+y1)/2;
-  const hw = interp(CABIN_X1,HALFW_PROFILE)*0.80;
+  const hw = interp(CABIN_X1,HALFW_PROFILE)*0.75;
   const rg = box(Math.hypot(CABIN_X1-roofEndX,y1-y0), 14, hw*2, xC, yC, 0, M.glass, 'vigia-traseira');
   rg.rotation.z = Math.atan2(y1-y0, CABIN_X1-roofEndX);
 }
@@ -324,18 +338,9 @@ for(const side of [-1,1]){
 }
 
 /* ================================================================
-   CAIXAS DE RODA E RODAS
+   RODAS
    ================================================================ */
 const frontAxleX = FRONT_OVERHANG, rearAxleX = LENGTH-REAR_OVERHANG;
-function arch(xMm, zMm){
-  const torus = new THREE.Mesh(new THREE.TorusGeometry(.40,.035,10,32,Math.PI), M.body2);
-  torus.name='arco-roda'; torus.castShadow=true;
-  torus.rotation.set(Math.PI/2,0,Math.PI);
-  torus.position.set(xMm*M2MM+originOffset,.40,zMm*M2MM);
-  shell.add(torus);
-}
-arch(frontAxleX,-HALF_TRACK-6); arch(frontAxleX,HALF_TRACK+6);
-arch(rearAxleX,-HALF_TRACK-6); arch(rearAxleX,HALF_TRACK+6);
 
 function wheel(xMm, zMm){
   const g = new THREE.Group();
