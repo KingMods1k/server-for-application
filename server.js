@@ -9,7 +9,7 @@ app.get('/', (req, res) => {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>Carro 3D — carroceria fiel à planta</title>
+<title>Carro 3D — carroceria por fatias precisas</title>
 <style>
 *{box-sizing:border-box}
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#090b0f;font-family:Arial,sans-serif;color:#fff}
@@ -27,8 +27,8 @@ button:active{transform:translateY(1px)}
 <div id="app"></div>
 <div id="status" style="position:fixed;left:18px;top:145px;z-index:10;padding:10px 12px;border-radius:9px;background:rgba(0,0,0,.78);color:#fff;font:12px Arial">Inicializando 3D…</div>
 <div class="hud">
- <b>Modelo 3D — carroceria fiel à planta</b><br>
- <small>Silhueta extrudada seguindo o perfil lateral real do desenho técnico.</small><br>
+ <b>Modelo 3D — carroceria por fatias precisas</b><br>
+ <small>Centenas de fatias finas empilhadas, cada uma calculada exatamente pela silhueta da planta.</small><br>
  <span class="badge">4480 × 1950 × 1250 mm</span>
  <span class="badge">Entre-eixos: 2475 mm</span>
  <span class="badge">Bitola: 1580 mm</span>
@@ -50,9 +50,6 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
 /* ================================================================
    MEDIDAS EXATAS DA PLANTA
-   Comprimento: 4480mm | Largura: 1950mm | Altura: 1250mm
-   Entre-eixos: 2475mm | Balanço dianteiro: 930mm | Balanço traseiro: 1075mm
-   Bitola: 1580mm
    ================================================================ */
 const LENGTH = 4.480;
 const WIDTH = 1.950;
@@ -61,10 +58,11 @@ const HEIGHT = 1.250;
 const HALF_TRACK = 1.580 / 2;
 const WHEEL_R = 0.335;
 const WHEEL_W = 0.235;
-
 const FRONT_AXLE = -1.310;
 const REAR_AXLE = 1.165;
 const GROUND = WHEEL_R;
+const FRONT_X = -2.240;
+const REAR_X = 2.240;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x090b0f);
@@ -125,167 +123,188 @@ const car = new THREE.Group();
 car.name = 'CARRO_COMPLETO';
 scene.add(car);
 const shell = new THREE.Group();
-shell.name = 'CARROCERIA';
+shell.name = 'CARROCERIA_FATIAS';
 car.add(shell);
 const wheels = new THREE.Group();
 wheels.name = 'RODAS';
 car.add(wheels);
 
-function mesh(geometry, material, name, parent=shell){
-  const o = new THREE.Mesh(geometry, material);
+function box(w,h,d,x,y,z,mat,name,parent=shell){
+  const o = new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);
   o.name = name;
   o.castShadow = true;
   o.receiveShadow = true;
+  o.position.set(x,y,z);
   parent.add(o);
   return o;
 }
 
+/* Interpolação linear entre pontos de controle (x -> valor) */
+function interp(x, pts){
+  if(x <= pts[0][0]) return pts[0][1];
+  if(x >= pts[pts.length-1][0]) return pts[pts.length-1][1];
+  for(let i=0;i<pts.length-1;i++){
+    const [x1,y1] = pts[i], [x2,y2] = pts[i+1];
+    if(x >= x1 && x <= x2){
+      const t = (x-x1)/(x2-x1);
+      return y1 + (y2-y1)*t;
+    }
+  }
+  return pts[pts.length-1][1];
+}
+
 /* ================================================================
-   PERFIL LATERAL — pontos (x,y) traçados a partir da silhueta real
-   da planta: capô baixo e longo, para-brisa inclinado, teto de coupé
-   arredondado, vidro traseiro inclinado, traseira curta e alta.
-   x: -2.240 (frente) a +2.240 (traseira). y: altura do chão.
+   PONTOS DE CONTROLE DA PLANTA (x em metros a partir do centro,
+   valores lidos da vista lateral e superior do desenho técnico)
+
+   TOPO da carroceria (altura do teto/capô/tampa em cada posição x)
    ================================================================ */
-const sideProfile = [
-  [-2.240, 0.42],   // ponta dianteira, baixa
-  [-2.180, 0.56],   // sobe até o para-choque
-  [-1.900, 0.66],   // linha do capô começa
-  [-1.500, 0.70],   // capô, quase reto e baixo
-  [-1.150, 0.72],   // fim do capô, base do para-brisa
-  [-0.950, 0.95],   // subida do para-brisa (inclinado)
-  [-0.720, 1.17],   // topo do para-brisa / início do teto
-  [-0.200, 1.245],  // ponto mais alto do teto (curva suave)
-  [ 0.280, 1.235],  // teto continua, levemente descendo
-  [ 0.680, 1.13],   // início da descida do vidro traseiro
-  [ 0.980, 0.90],   // vidro traseiro inclinado
-  [ 1.220, 0.74],   // base do vidro traseiro / tampa
-  [ 1.650, 0.70],   // tampa traseira, quase reta
-  [ 1.980, 0.66],   // início da queda para o para-choque
-  [ 2.220, 0.50],   // para-choque traseiro
-  [ 2.240, 0.34],   // ponta traseira baixa
-  [ 2.200, 0.22],   // linha inferior traseira
-  [ 1.700, 0.19],   // soleira traseira
-  [-1.700, 0.19],   // soleira dianteira
-  [-2.200, 0.24]    // fecha na ponta dianteira baixa
+const topProfile = [
+  [FRONT_X,      0.44],
+  [-2.10,        0.58],
+  [-1.90,        0.68],
+  [-1.50,        0.715],
+  [-1.15,        0.73],
+  [-0.95,        0.96],
+  [-0.72,        1.175],
+  [-0.45,        1.240],
+  [-0.20,        1.248],
+  [ 0.10,        1.245],
+  [ 0.35,        1.220],
+  [ 0.60,        1.150],
+  [ 0.80,        1.020],
+  [ 0.98,        0.880],
+  [ 1.16,        0.760],
+  [ 1.45,        0.715],
+  [ 1.75,        0.700],
+  [ 2.00,        0.660],
+  [ 2.15,        0.560],
+  [REAR_X,       0.400]
 ];
 
-function extrudedSide(points, depth, z){
-  const shape = new THREE.Shape();
-  shape.moveTo(points[0][0], points[0][1]);
-  for(let i=1;i<points.length;i++) shape.lineTo(points[i][0],points[i][1]);
-  shape.closePath();
-  const g = new THREE.ExtrudeGeometry(shape,{depth,bevelEnabled:true,bevelThickness:.012,bevelSize:.012,bevelSegments:2,steps:1});
-  g.translate(0,0,-depth/2);
-  const o = mesh(g,M.body,'lateral-carroceria');
-  o.position.z = z;
-  return o;
-}
+/* BASE da carroceria (linha inferior / soleira) em cada posição x */
+const bottomProfile = [
+  [FRONT_X,      0.24],
+  [-2.10,        0.20],
+  [-1.70,        0.185],
+  [ 1.70,        0.185],
+  [ 2.10,        0.22],
+  [REAR_X,       0.28]
+];
 
-/* Duas laterais espelhadas, dando espessura à carroceria */
-extrudedSide(sideProfile, 0.075, -HALF_W+0.038);
-extrudedSide(sideProfile, 0.075,  HALF_W-0.038);
+/* LARGURA da carroceria em cada posição x (vista de cima):
+   estreita na frente, alarga nas caixas de roda, um pouco mais
+   estreita na cabine (efeito "cintura"), alarga de novo atrás. */
+const widthProfile = [
+  [FRONT_X,        1.05],
+  [-2.10,          1.62],
+  [FRONT_AXLE-0.25,1.94],
+  [FRONT_AXLE,     1.95],
+  [FRONT_AXLE+0.30,1.78],
+  [-0.60,          1.74],
+  [ 0.40,          1.74],
+  [ REAR_AXLE-0.30,1.80],
+  [ REAR_AXLE,     1.95],
+  [ REAR_AXLE+0.25,1.94],
+  [ 2.10,          1.60],
+  [REAR_X,         1.00]
+];
 
-/* Painel de fundo que fecha o volume por dentro (evita ver vazio ao girar) */
-{
-  const bodyWidth = WIDTH - 0.076;
-  const backShape = new THREE.Shape();
-  backShape.moveTo(sideProfile[0][0], sideProfile[0][1]);
-  for(let i=1;i<sideProfile.length;i++) backShape.lineTo(sideProfile[i][0],sideProfile[i][1]);
-  backShape.closePath();
-  const capGeo = new THREE.ShapeGeometry(backShape);
-  const capL = mesh(capGeo, M.body2, 'tampa-interna-esq');
-  capL.position.set(0,0,-bodyWidth/2);
-  capL.rotation.y = Math.PI;
-  const capR = mesh(capGeo, M.body2, 'tampa-interna-dir');
-  capR.position.set(0,0, bodyWidth/2);
-}
+/* LARGURA DA CABINE (vidros/teto) em cada x — sempre menor que a
+   largura total da carroceria, criando o "degrau" das colunas. */
+const cabinTop = -0.72, cabinBottom = 1.16;
+const cabinWidthProfile = [
+  [cabinTop,    1.50],
+  [-0.45,       1.62],
+  [ 0.10,       1.62],
+  [ 0.55,       1.56],
+  [cabinBottom, 1.44]
+];
 
-/* Teto — painel curvo simplificado unindo as duas laterais no topo */
-{
-  const roofPts = sideProfile.filter(p => p[0] >= -0.72 && p[0] <= 0.68 && p[1] > 1.00);
-  const g = new THREE.BufferGeometry();
-  const w = HALF_W - 0.02;
-  const verts = [];
-  for(let i=0;i<roofPts.length-1;i++){
-    const [x1,y1] = roofPts[i], [x2,y2] = roofPts[i+1];
-    verts.push(x1,y1,-w, x2,y2,-w, x1,y1, w);
-    verts.push(x2,y2,-w, x2,y2, w, x1,y1, w);
+/* ================================================================
+   GERAÇÃO DA CARROCERIA POR FATIAS FINAS
+   Uma fatia (box) a cada 3cm ao longo do comprimento. Cada fatia usa
+   a altura (topo-base) e largura exatas daquele ponto x, interpoladas
+   dos perfis acima — isso segue a curva real da planta com precisão,
+   em vez de aproximar com poucos blocos grandes.
+   ================================================================ */
+const STEP = 0.03; // 3cm por fatia -> ~150 fatias no comprimento
+let sliceCount = 0;
+for(let x = FRONT_X; x <= REAR_X; x += STEP){
+  const top = interp(x, topProfile);
+  const bottom = interp(x, bottomProfile);
+  const w = interp(x, widthProfile);
+  const h = Math.max(top - bottom, 0.02);
+  const cy = (top + bottom) / 2;
+
+  const isCabin = x >= cabinTop && x <= cabinBottom;
+  const cabinH = isCabin ? Math.max(top - 0.72, 0) : 0;
+  const lowerH = isCabin ? Math.max(0.72 - bottom, 0.02) : h;
+
+  if(isCabin){
+    /* Parte inferior da fatia = carroceria (largura total) */
+    box(STEP, lowerH, w, x, bottom + lowerH/2, 0, M.body, 'fatia-carroceria');
+    /* Parte superior da fatia = cabine/vidro (largura menor, material vidro) */
+    if(cabinH > 0.02){
+      const cw = interp(x, cabinWidthProfile);
+      box(STEP, cabinH, cw, x, 0.72 + cabinH/2, 0, M.glass, 'fatia-cabine');
+    }
+  } else {
+    box(STEP, h, w, x, cy, 0, M.body, 'fatia-carroceria');
   }
-  g.setAttribute('position', new THREE.Float32BufferAttribute(verts,3));
-  g.computeVertexNormals();
-  mesh(g, M.body, 'teto');
+  sliceCount++;
 }
 
-/* Vidros — dianteiro, traseiro e laterais, encaixados na abertura da cabine */
+/* Teto sólido por cima da cabine (fecha a parte de cima do vidro) */
+for(let x = cabinTop+0.10; x <= cabinBottom-0.10; x += STEP){
+  const top = interp(x, topProfile);
+  const cw = interp(x, cabinWidthProfile) - 0.10;
+  box(STEP, 0.06, cw, x, top - 0.03, 0, M.body, 'fatia-teto');
+}
+
+/* Colunas A e C nos limites da cabine */
+for(const z of [-HALF_W+0.06, HALF_W-0.06]){
+  box(.08, 0.46, .08, cabinTop, 0.96, z, M.body2, 'coluna-A');
+  box(.08, 0.40, .08, cabinBottom, 0.94, z, M.body2, 'coluna-C');
+}
+
+/* Para-brisa e vidro traseiro (planos inclinados, visuais) */
 {
-  const wf = mesh(new THREE.PlaneGeometry(.62,.42), M.glass, 'para-brisa');
-  wf.position.set(-.84, 1.06, 0);
-  wf.rotation.y = Math.PI/2;
-  wf.rotation.z = -0.72;
-
-  const rg = mesh(new THREE.PlaneGeometry(.58,.40), M.glass, 'vidro-traseiro');
-  rg.position.set(1.08, 0.98, 0);
-  rg.rotation.y = Math.PI/2;
-  rg.rotation.z = 0.68;
-
-  const sideWinPts = [[-.68,1.00],[-.42,1.20],[.24,1.20],[.62,1.00],[.58,.80],[-.62,.80]];
-  const shape = new THREE.Shape();
-  shape.moveTo(sideWinPts[0][0], sideWinPts[0][1]);
-  for(let i=1;i<sideWinPts.length;i++) shape.lineTo(sideWinPts[i][0],sideWinPts[i][1]);
-  shape.closePath();
-  const wg = new THREE.ExtrudeGeometry(shape,{depth:.02,bevelEnabled:false});
-  wg.translate(0,0,-.01);
-  for(const z of [-HALF_W-0.002, HALF_W+0.002]){
-    const win = mesh(wg, M.glass, 'vidro-lateral');
-    win.position.z = z;
-  }
-}
-
-/* Colunas visuais (A e C) nos limites da abertura de vidro */
-for(const z of [-HALF_W+0.04, HALF_W-0.04]){
-  const colA = mesh(new THREE.BoxGeometry(.07,.42,.07), M.body2, 'coluna-A');
-  colA.position.set(-.72,1.00,z);
-  colA.rotation.z = -0.55;
-  const colC = mesh(new THREE.BoxGeometry(.07,.38,.07), M.body2, 'coluna-C');
-  colC.position.set(.90,0.96,z);
-  colC.rotation.z = 0.50;
+  const wf = box(.04,.50,1.50,-.83,1.02,0,M.glass,'para-brisa');
+  wf.rotation.z = -0.66;
+  const rg = box(.04,.44,1.48,1.00,0.98,0,M.glass,'vidro-traseiro');
+  rg.rotation.z = 0.60;
 }
 
 /* Para-choques */
-const bump = (x,name)=> {
-  const o = mesh(new THREE.BoxGeometry(.14,.20,1.80), M.body2, name);
-  o.position.set(x,.38,0);
-  return o;
-};
-bump(-2.18,'parachoque-dianteiro');
-bump( 2.18,'parachoque-traseiro');
+box(.14,.20,1.85,-2.18,.38,0,M.body2,'parachoque-dianteiro');
+box(.14,.20,1.85, 2.18,.38,0,M.body2,'parachoque-traseiro');
 
 /* Faróis e lanternas */
 for(const z of [-.66,.66]){
-  const farol = mesh(new THREE.BoxGeometry(.05,.15,.34), M.lamp, 'farol');
-  farol.position.set(-2.245,.52,z);
-  const lanterna = mesh(new THREE.BoxGeometry(.05,.14,.34), M.red, 'lanterna');
-  lanterna.position.set(2.245,.50,z);
+  box(.05,.15,.34,-2.245,.52,z,M.lamp,'farol');
+  box(.05,.14,.34, 2.245,.50,z,M.red,'lanterna');
 }
 
 /* Portas — linhas em relevo */
 for(const z of [-HALF_W-0.006, HALF_W+0.006]){
-  const contorno = mesh(new THREE.BoxGeometry(1.55,.02,.02), M.body2, 'contorno-porta');
-  contorno.position.set(0,.62,z);
-  const macaneta = mesh(new THREE.BoxGeometry(.14,.035,.03), M.black, 'macaneta');
-  macaneta.position.set(.30,.82,z);
+  box(1.55,.02,.02,0,.62,z,M.body2,'contorno-porta');
+  box(.14,.035,.03,.30,.82,z,M.black,'macaneta');
 }
 
-/* Caixas de roda — arcos por cima das rodas, seguindo a curvatura */
+/* Caixas de roda */
 function arch(x,z){
-  const torus = mesh(new THREE.TorusGeometry(.38,.035,10,32,Math.PI), M.body2, 'arco-roda');
+  const torus = new THREE.Mesh(new THREE.TorusGeometry(.38,.035,10,32,Math.PI), M.body2);
+  torus.name = 'arco-roda';
+  torus.castShadow = true;
   torus.rotation.set(Math.PI/2,0,Math.PI);
   torus.position.set(x,.36,z);
+  shell.add(torus);
 }
 arch(FRONT_AXLE,-HALF_W-.006); arch(FRONT_AXLE,HALF_W+.006);
 arch(REAR_AXLE,-HALF_W-.006); arch(REAR_AXLE,HALF_W+.006);
 
-/* Rodas — na bitola real de 1580mm */
+/* Rodas na bitola real de 1580mm */
 function wheel(x,z,side){
   const g = new THREE.Group();
   g.name = \`roda-\${side}-\${x<0?'dianteira':'traseira'}\`;
@@ -325,7 +344,7 @@ document.getElementById('viewSide').onclick=()=>setView([0,1.15,6.8],[0,.65,0]);
 document.getElementById('viewTop').onclick=()=>setView([0,7.2,.01],[0,.45,0]);
 document.getElementById('viewRear').onclick=()=>setView([6.8,1.15,0],[0,.65,0]);
 
-document.getElementById('status').textContent='Modelo 3D carregado';
+document.getElementById('status').textContent='Modelo 3D carregado — '+sliceCount+' fatias';
 
 document.getElementById('view3d').click();
 addEventListener('resize',()=>{
