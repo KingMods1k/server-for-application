@@ -9,7 +9,7 @@ app.get('/', (req, res) => {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>Carro 3D — carroceria por fatias precisas</title>
+<title>Carro 3D — reconstrução fiel à planta</title>
 <style>
 *{box-sizing:border-box}
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#090b0f;font-family:Arial,sans-serif;color:#fff}
@@ -27,8 +27,8 @@ button:active{transform:translateY(1px)}
 <div id="app"></div>
 <div id="status" style="position:fixed;left:18px;top:145px;z-index:10;padding:10px 12px;border-radius:9px;background:rgba(0,0,0,.78);color:#fff;font:12px Arial">Inicializando 3D…</div>
 <div class="hud">
- <b>Modelo 3D — carroceria por fatias precisas</b><br>
- <small>Centenas de fatias finas empilhadas, cada uma calculada exatamente pela silhueta da planta.</small><br>
+ <b>Modelo 3D — reconstrução por loft, fiel à planta</b><br>
+ <small>Contorno digitalizado diretamente das 4 vistas ortográficas (lateral, topo, frente, traseira) e reconstruído por malha contínua (loft), não por caixas empilhadas.</small><br>
  <span class="badge">4480 × 1950 × 1250 mm</span>
  <span class="badge">Entre-eixos: 2475 mm</span>
  <span class="badge">Bitola: 1580 mm</span>
@@ -49,26 +49,102 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
 /* ================================================================
-   MEDIDAS EXATAS DA PLANTA
+   DADOS DIGITALIZADOS DIRETAMENTE DA PLANTA TÉCNICA (219063.jpg)
+   Cada ponto foi extraído por análise de pixel das 4 vistas
+   ortográficas, calibrado pelas cotas reais do desenho:
+     lateral:  4480 (comprimento) x 1250 (altura)
+     topo:     4480 (comprimento) x 1950 (largura)
+     frente/traseira: 1950 (largura) x 1250 (altura), bitola 1580
+   Todas as unidades abaixo em mm, origem X=0 no nariz do carro.
    ================================================================ */
-const LENGTH = 4.480;
-const WIDTH = 1.950;
-const HALF_W = WIDTH / 2;
-const HEIGHT = 1.250;
-const HALF_TRACK = 1.580 / 2;
-const WHEEL_R = 0.335;
-const WHEEL_W = 0.235;
-const FRONT_AXLE = -1.310;
-const REAR_AXLE = 1.165;
-const GROUND = WHEEL_R;
-const FRONT_X = -2.240;
-const REAR_X = 2.240;
+
+// Perfil superior (silhueta de cima) lateral: [x_mm, altura_mm]
+const TOP_PROFILE = [
+ [0,505],[77,521],[359,612],[679,683],[999,739],[1319,779],[1640,805],
+ [1832,820],[2024,825],[2152,891],[2280,951],[2408,1012],[2536,1063],
+ [2664,1113],[2792,1159],[2920,1199],[3049,1235],[3177,1250],[3305,1265],
+ [3433,1275],[3561,1275],[3689,1270],[3817,1265],[3945,1250],[4073,1235],
+ [4201,1210],[4329,1150],[4400,1053],[4480,940]
+];
+
+// Perfil inferior (soleira/base) lateral: [x_mm, altura_mm]
+const BOTTOM_PROFILE = [
+ [0,230],[487,258],[679,273],[1832,213],[2408,218],[3061,213],[3561,220],
+ [3984,213],[4368,218],[4480,240]
+];
+
+// Largura TOTAL do carro por posição X (vista de topo): [x_mm, largura_mm]
+const WIDTH_PROFILE = [
+ [0,600],[127,792],[216,1257],[304,1554],[392,1717],[480,1880],[569,1950],
+ [627,1973],[716,1985],[804,1997],[921,1997],[980,1985],[1069,1950],
+ [1304,1950],[1421,1956],[1539,1962],[1627,1950],[1716,1944],[1804,1915],
+ [1921,1903],[2010,1892],[2127,1886],[2245,1880],[2421,1880],[2539,1874],
+ [2657,1874],[2745,1892],[2862,1898],[2951,1962],[3068,1997],[3157,2020],
+ [3245,2037],[3333,2055],[3480,1970],[3627,1950],[3774,1950],[3892,2061],
+ [3980,2031],[4068,1973],[4156,1915],[4245,1845],[4333,1694],[4392,1257],
+ [4480,1000]
+];
+
+// Seção transversal DIANTEIRA: [altura_mm_do_chao, meia_largura_mm]
+// normalizado para meia-largura relativa (0..1) em relação ao seu proprio maximo
+const FRONT_SECTION = [
+ [0,975],[167,967],[288,970],[390,975],[552,975],[673,962],[754,889],
+ [835,835],[916,803],[997,760],[1078,717],[1159,666],[1220,508],[1240,309],[1250,150]
+];
+
+// Seção transversal TRASEIRA: [altura_mm_do_chao, meia_largura_mm]
+const REAR_SECTION = [
+ [0,929],[101,943],[202,959],[324,972],[445,970],[587,943],[688,835],
+ [789,782],[891,739],[992,680],[1053,89]
+];
+
+const LENGTH = 4480;
+const WIDTH = 1950;
+const HEIGHT = 1250;
+const HALF_TRACK = 1580/2;
+const WHEEL_R = 335, WHEEL_W = 235;
+const FRONT_AXLE = 930 + 380;   // aprox. centro do arco dianteiro, da vista lateral
+const REAR_AXLE = LENGTH - 1075 - 380;
+const GROUND_MM = 0; // chao = y_mm 0 na planta; rodas assentam no proprio raio
+
+function interp(x, pts){
+  if(x <= pts[0][0]) return pts[0][1];
+  if(x >= pts[pts.length-1][0]) return pts[pts.length-1][1];
+  for(let i=0;i<pts.length-1;i++){
+    const [x1,y1] = pts[i], [x2,y2] = pts[i+1];
+    if(x >= x1 && x <= x2){
+      const t = (x-x1)/(x2-x1);
+      // interpolação suave (smoothstep) entre pontos de controle da planta
+      const s = t*t*(3-2*t);
+      return y1 + (y2-y1)*s;
+    }
+  }
+  return pts[pts.length-1][1];
+}
+
+/* Devolve o formato normalizado (0..1 de meia-largura relativa) da seção
+   transversal numa dada altura relativa (0=chão do carro,1=topo do carro
+   naquele X), misturando FRONT_SECTION e REAR_SECTION conforme a posição
+   longitudinal x (0=nariz,1=traseira). Isso dá a curvatura real (ombros
+   largos, cintura estreita) em vez de um retângulo. */
+function sectionShape(hRel, mixRearT){
+  function sampleNorm(pts, hRel){
+    const maxH = pts[pts.length-1][0];
+    const h = hRel*maxH;
+    const maxW = Math.max(...pts.map(p=>p[1]));
+    const w = interp(h, pts);
+    return w/maxW;
+  }
+  const f = sampleNorm(FRONT_SECTION, hRel);
+  const r = sampleNorm(REAR_SECTION, hRel);
+  return f + (r-f)*mixRearT;
+}
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x090b0f);
 scene.fog = new THREE.Fog(0x090b0f, 12, 25);
 
-const camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 0.01, 100);
+const camera = new THREE.PerspectiveCamera(38, innerWidth/innerHeight, 0.01, 100);
 camera.position.set(5.8, 2.35, 5.4);
 
 const renderer = new THREE.WebGLRenderer({antialias:true});
@@ -108,21 +184,14 @@ grid.material.transparent = true;
 grid.material.opacity = .45;
 scene.add(grid);
 
-/* Vidro: material simples, translúcido, SEM roughness/metalness que
-   causavam o padrão listrado com a luz direcional forte. */
 const glassMat = new THREE.MeshPhysicalMaterial({
-  color: 0x0d1520,
-  metalness: 0,
-  roughness: 0.05,
-  transmission: 0.55,
-  transparent: true,
-  opacity: 0.85,
-  clearcoat: 0.3,
-  side: THREE.DoubleSide
+  color: 0x0d1520, metalness: 0, roughness: 0.05,
+  transmission: 0.55, transparent: true, opacity: 0.85,
+  clearcoat: 0.3, side: THREE.DoubleSide
 });
 
 const M = {
-  body: new THREE.MeshPhysicalMaterial({color:0x69747e, metalness:.58, roughness:.28, clearcoat:.8, clearcoatRoughness:.12}),
+  body: new THREE.MeshPhysicalMaterial({color:0x69747e, metalness:.58, roughness:.28, clearcoat:.8, clearcoatRoughness:.12, side:THREE.DoubleSide}),
   body2: new THREE.MeshPhysicalMaterial({color:0x505a63, metalness:.52, roughness:.34}),
   glass: glassMat,
   rubber: new THREE.MeshStandardMaterial({color:0x080a0d, roughness:.72, metalness:.05}),
@@ -136,11 +205,202 @@ const car = new THREE.Group();
 car.name = 'CARRO_COMPLETO';
 scene.add(car);
 const shell = new THREE.Group();
-shell.name = 'CARROCERIA_FATIAS';
+shell.name = 'CARROCERIA_LOFT';
 car.add(shell);
 const wheels = new THREE.Group();
 wheels.name = 'RODAS';
 car.add(wheels);
+
+const M2MM = 0.001; // conversão mm -> metros (unidade da cena)
+
+/* ================================================================
+   GERAÇÃO DA CARROCERIA POR LOFT (malha contínua ao longo de X)
+   Para cada fatia longitudinal, a seção transversal (perfil em Y-Z)
+   é construída a partir de:
+     - topo/base reais daquele X (TOP_PROFILE / BOTTOM_PROFILE)
+     - largura máxima real daquele X (WIDTH_PROFILE)
+     - formato de arredondamento (sectionShape) interpolado entre a
+       seção dianteira e traseira reais da planta
+   Isso substitui caixas empilhadas por uma malha suave e fiel.
+   ================================================================ */
+const N_LONG = 160;      // divisões ao longo do comprimento
+const N_RING = 28;       // divisões ao redor da seção transversal (meio-perfil, espelhado)
+
+function buildBodyGeometry(){
+  const positions = [];
+  const indices = [];
+  const uvs = [];
+
+  // pontos de referência para mistura frente/trás (0 = nariz, 1 = traseira)
+  const rings = [];
+
+  for(let i=0;i<=N_LONG;i++){
+    const t = i/N_LONG;
+    const x = t*LENGTH;
+    const top = interp(x, TOP_PROFILE);
+    const bottom = interp(x, BOTTOM_PROFILE);
+    const halfW = interp(x, WIDTH_PROFILE)/2;
+    const mixRearT = t; // mistura linear da forma de seção ao longo do X
+
+    const ring = [];
+    // percorre a seção transversal do lado esquerdo (z negativo) por cima
+    // até o lado direito (z positivo), formando um "U" invertido (sem base,
+    // carroceria aberta embaixo como na planta/BIW)
+    for(let j=0;j<=N_RING;j++){
+      const s = j/N_RING;         // 0=esquerda topo->baixo->direita=1
+      // mapear s em (lado, alturaRelativa)
+      let side, hRel;
+      if(s <= 0.5){
+        side = -1;
+        hRel = 1 - (s/0.5); // 0->esquerda-topo (hRel=1), 0.5->esquerda-baixo(hRel=0)
+      } else {
+        side = 1;
+        hRel = (s-0.5)/0.5; // 0.5->direita-baixo(hRel=0), 1->direita-topo(hRel=1)
+      }
+      const shapeFactor = sectionShape(hRel, mixRearT); // 0..1
+      const y = bottom + hRel*(top-bottom);
+      const z = side * halfW * shapeFactor;
+      ring.push([x, y, z]);
+    }
+    rings.push(ring);
+  }
+
+  for(const ring of rings){
+    for(const [x,y,z] of ring){
+      positions.push(x*M2MM, y*M2MM, z*M2MM);
+      uvs.push(0,0);
+    }
+  }
+
+  const ringLen = N_RING+1;
+  for(let i=0;i<N_LONG;i++){
+    for(let j=0;j<N_RING;j++){
+      const a = i*ringLen+j;
+      const b = i*ringLen+j+1;
+      const c = (i+1)*ringLen+j;
+      const d = (i+1)*ringLen+j+1;
+      indices.push(a,c,b, b,c,d);
+    }
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions,3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs,2));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+const bodyGeo = buildBodyGeometry();
+const bodyMesh = new THREE.Mesh(bodyGeo, M.body);
+bodyMesh.castShadow = true;
+bodyMesh.receiveShadow = true;
+bodyMesh.name = 'carroceria-loft';
+// recentraliza: planta usa X=0 no nariz; cena usa X=0 no centro, nariz para -X
+bodyMesh.position.x = -LENGTH*M2MM/2;
+shell.add(bodyMesh);
+
+/* Vidros/cabine: gerados como uma segunda malha, mais fina, encaixada
+   logo acima da cintura (belt) até o teto, usando o mesmo loft mas
+   restrito à faixa de altura da cabine e um pouco recuada para dentro. */
+function beltHeightAt(x){
+  // cintura = ~78% da altura entre bottom e top nessa faixa (aprox. visual
+  // da planta: vidro comeca proximo ao topo das portas)
+  const top = interp(x, TOP_PROFILE);
+  const bottom = interp(x, BOTTOM_PROFILE);
+  return bottom + (top-bottom)*0.62;
+}
+const CABIN_X0 = 1180, CABIN_X1 = 3550; // faixa longitudinal aprox. do habitáculo (da vista lateral)
+
+function buildCabinGeometry(){
+  const positions = [];
+  const indices = [];
+  const N_L = 60;
+  const rings = [];
+  for(let i=0;i<=N_L;i++){
+    const t = i/N_L;
+    const x = CABIN_X0 + t*(CABIN_X1-CABIN_X0);
+    const top = interp(x, TOP_PROFILE) - 12; // recuo pro teto assentar por cima
+    const belt = beltHeightAt(x);
+    const halfWTop = interp(x, WIDTH_PROFILE)/2 * 0.80; // cabine mais estreita que a carroceria
+    const mixRearT = x/LENGTH;
+    const ring = [];
+    for(let j=0;j<=N_RING;j++){
+      const s = j/N_RING;
+      let side, hRel;
+      if(s<=0.5){ side=-1; hRel = 1-(s/0.5); } else { side=1; hRel=(s-0.5)/0.5; }
+      const shapeFactor = sectionShape(0.55+hRel*0.45, mixRearT); // so a parte de cima da secao (mais estreita)
+      const y = belt + hRel*(top-belt);
+      const z = side*halfWTop*shapeFactor;
+      ring.push([x,y,z]);
+    }
+    rings.push(ring);
+  }
+  for(const ring of rings) for(const [x,y,z] of ring){ positions.push(x*M2MM,y*M2MM,z*M2MM); }
+  const ringLen = N_RING+1;
+  for(let i=0;i<N_L;i++){
+    for(let j=0;j<N_RING;j++){
+      const a=i*ringLen+j, b=i*ringLen+j+1, c=(i+1)*ringLen+j, d=(i+1)*ringLen+j+1;
+      indices.push(a,c,b, b,c,d);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions,3));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  return geo;
+}
+const cabinMesh = new THREE.Mesh(buildCabinGeometry(), M.glass);
+cabinMesh.position.x = -LENGTH*M2MM/2;
+cabinMesh.name = 'cabine-vidro';
+shell.add(cabinMesh);
+
+/* Teto sólido: fina camada acima do vidro, mesma técnica, só que opaca
+   e cobrindo apenas o terço superior da cabine. */
+function buildRoofGeometry(){
+  const positions = [];
+  const indices = [];
+  const N_L = 60;
+  const rings = [];
+  const roofX0 = CABIN_X0+300, roofX1 = CABIN_X1-150;
+  for(let i=0;i<=N_L;i++){
+    const t = i/N_L;
+    const x = roofX0 + t*(roofX1-roofX0);
+    const top = interp(x, TOP_PROFILE);
+    const under = top - 30;
+    const halfW = interp(x, WIDTH_PROFILE)/2 * 0.62;
+    const mixRearT = x/LENGTH;
+    const ring = [];
+    for(let j=0;j<=N_RING;j++){
+      const s=j/N_RING;
+      let side,hRel;
+      if(s<=0.5){side=-1;hRel=1-(s/0.5);} else {side=1;hRel=(s-0.5)/0.5;}
+      const shapeFactor = sectionShape(0.85+hRel*0.15, mixRearT);
+      const y = under + hRel*(top-under);
+      const z = side*halfW*shapeFactor;
+      ring.push([x,y,z]);
+    }
+    rings.push(ring);
+  }
+  for(const ring of rings) for(const [x,y,z] of ring){ positions.push(x*M2MM,y*M2MM,z*M2MM); }
+  const ringLen = N_RING+1;
+  for(let i=0;i<N_L;i++){
+    for(let j=0;j<N_RING;j++){
+      const a=i*ringLen+j,b=i*ringLen+j+1,c=(i+1)*ringLen+j,d=(i+1)*ringLen+j+1;
+      indices.push(a,c,b, b,c,d);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions,3));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  return geo;
+}
+const roofMesh = new THREE.Mesh(buildRoofGeometry(), M.body2);
+roofMesh.position.x = -LENGTH*M2MM/2;
+roofMesh.castShadow = true;
+roofMesh.name = 'teto';
+shell.add(roofMesh);
 
 function box(w,h,d,x,y,z,mat,name,parent=shell){
   const o = new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);
@@ -152,172 +412,43 @@ function box(w,h,d,x,y,z,mat,name,parent=shell){
   return o;
 }
 
-function interp(x, pts){
-  if(x <= pts[0][0]) return pts[0][1];
-  if(x >= pts[pts.length-1][0]) return pts[pts.length-1][1];
-  for(let i=0;i<pts.length-1;i++){
-    const [x1,y1] = pts[i], [x2,y2] = pts[i+1];
-    if(x >= x1 && x <= x2){
-      const t = (x-x1)/(x2-x1);
-      return y1 + (y2-y1)*t;
-    }
-  }
-  return pts[pts.length-1][1];
+/* Para-choques, faróis e lanternas posicionados pelas cotas reais da
+   planta (extremos do comprimento e altura do nariz/traseira). */
+const frontX = -LENGTH*M2MM/2;
+const rearX = LENGTH*M2MM/2;
+const halfWFront = interp(40, WIDTH_PROFILE)/2*M2MM;
+const halfWRear = interp(LENGTH-40, WIDTH_PROFILE)/2*M2MM;
+
+box(.14,.20, halfWFront*1.9, frontX+.05, interp(40,BOTTOM_PROFILE)*M2MM+.10, 0, M.body2, 'parachoque-dianteiro');
+box(.14,.20, halfWRear*1.9, rearX-.05, interp(LENGTH-40,BOTTOM_PROFILE)*M2MM+.10, 0, M.body2, 'parachoque-traseiro');
+
+for(const side of [-1,1]){
+  box(.05,.15,.34, frontX+.06, interp(300,TOP_PROFILE)*M2MM*0.72, side*halfWFront*0.62, M.lamp, 'farol');
+  box(.05,.14,.34, rearX-.06, interp(LENGTH-300,TOP_PROFILE)*M2MM*0.80, side*halfWRear*0.62, M.red, 'lanterna');
 }
 
-/* ================================================================
-   PONTOS DE CONTROLE DA PLANTA
-   ================================================================ */
-const topProfile = [
-  [FRONT_X,      0.44],
-  [-2.10,        0.58],
-  [-1.90,        0.68],
-  [-1.50,        0.715],
-  [-1.15,        0.73],
-  [-0.95,        0.96],
-  [-0.72,        1.175],
-  [-0.45,        1.240],
-  [-0.20,        1.248],
-  [ 0.10,        1.245],
-  [ 0.35,        1.220],
-  [ 0.60,        1.150],
-  [ 0.80,        1.020],
-  [ 0.98,        0.880],
-  [ 1.16,        0.760],
-  [ 1.45,        0.715],
-  [ 1.75,        0.700],
-  [ 2.00,        0.660],
-  [ 2.15,        0.560],
-  [REAR_X,       0.400]
-];
-
-const bottomProfile = [
-  [FRONT_X,      0.24],
-  [-2.10,        0.20],
-  [-1.70,        0.185],
-  [ 1.70,        0.185],
-  [ 2.10,        0.22],
-  [REAR_X,       0.28]
-];
-
-const widthProfile = [
-  [FRONT_X,        1.05],
-  [-2.10,          1.62],
-  [FRONT_AXLE-0.25,1.94],
-  [FRONT_AXLE,     1.95],
-  [FRONT_AXLE+0.30,1.78],
-  [-0.60,          1.74],
-  [ 0.40,          1.74],
-  [ REAR_AXLE-0.30,1.80],
-  [ REAR_AXLE,     1.95],
-  [ REAR_AXLE+0.25,1.94],
-  [ 2.10,          1.60],
-  [REAR_X,         1.00]
-];
-
-const cabinTop = -0.72, cabinBottom = 1.16;
-const cabinWidthProfile = [
-  [cabinTop,    1.50],
-  [-0.45,       1.62],
-  [ 0.10,       1.62],
-  [ 0.55,       1.56],
-  [cabinBottom, 1.44]
-];
-
-/* Altura onde a "cintura" da carroceria termina e o vidro começa,
-   interpolada suavemente na frente/trás do habitáculo (evita o
-   para-brisa "flutuando" fora da carroceria). */
-const beltProfile = [
-  [cabinTop-0.15, 0.73],
-  [cabinTop,      0.73],
-  [cabinBottom,   0.76],
-  [cabinBottom+0.15, 0.76]
-];
-
-/* ================================================================
-   GERAÇÃO DA CARROCERIA POR FATIAS FINAS
-   ================================================================ */
-const STEP = 0.03;
-let sliceCount = 0;
-for(let x = FRONT_X; x <= REAR_X; x += STEP){
-  const top = interp(x, topProfile);
-  const bottom = interp(x, bottomProfile);
-  const w = interp(x, widthProfile);
-  const h = Math.max(top - bottom, 0.02);
-  const cy = (top + bottom) / 2;
-
-  const isCabin = x >= cabinTop && x <= cabinBottom;
-  const belt = isCabin ? interp(x, beltProfile) : top;
-  const cabinH = isCabin ? Math.max(top - belt, 0) : 0;
-  const lowerH = isCabin ? Math.max(belt - bottom, 0.02) : h;
-
-  if(isCabin){
-    box(STEP, lowerH, w, x, bottom + lowerH/2, 0, M.body, 'fatia-carroceria');
-    if(cabinH > 0.015){
-      const cw = interp(x, cabinWidthProfile);
-      box(STEP, cabinH, cw, x, belt + cabinH/2, 0, M.glass, 'fatia-cabine');
-    }
-  } else {
-    box(STEP, h, w, x, cy, 0, M.body, 'fatia-carroceria');
-  }
-  sliceCount++;
-}
-
-/* Teto sólido por cima da cabine, encostado direto no topo do vidro
-   (sem gap, sem rotação — evita a sensação de peça flutuando). */
-for(let x = cabinTop+0.12; x <= cabinBottom-0.12; x += STEP){
-  const top = interp(x, topProfile);
-  const cw = interp(x, cabinWidthProfile) - 0.08;
-  box(STEP, 0.05, cw, x, top - 0.025, 0, M.body, 'fatia-teto');
-}
-
-/* Colunas A e C — encostadas exatamente na borda da cabine, sem rotação
-   solta (evita peças "flutuando" fora da carroceria). */
-for(const z of [-HALF_W+0.06, HALF_W-0.06]){
-  const beltA = interp(cabinTop, beltProfile);
-  const topA = interp(cabinTop, topProfile);
-  box(.07, topA-beltA, .07, cabinTop, (topA+beltA)/2, z, M.body2, 'coluna-A');
-
-  const beltC = interp(cabinBottom, beltProfile);
-  const topC = interp(cabinBottom, topProfile);
-  box(.07, topC-beltC, .07, cabinBottom, (topC+beltC)/2, z, M.body2, 'coluna-C');
-}
-
-/* Para-choques */
-box(.14,.20,1.85,-2.18,.38,0,M.body2,'parachoque-dianteiro');
-box(.14,.20,1.85, 2.18,.38,0,M.body2,'parachoque-traseiro');
-
-/* Faróis e lanternas */
-for(const z of [-.66,.66]){
-  box(.05,.15,.34,-2.245,.52,z,M.lamp,'farol');
-  box(.05,.14,.34, 2.245,.50,z,M.red,'lanterna');
-}
-
-/* Portas — linhas em relevo */
-for(const z of [-HALF_W-0.006, HALF_W+0.006]){
-  box(1.55,.02,.02,0,.62,z,M.body2,'contorno-porta');
-  box(.14,.035,.03,.30,.82,z,M.black,'macaneta');
-}
-
-/* Caixas de roda */
+/* Caixas de roda: posicionadas nos eixos reais (930mm e 4480-1075mm da
+   planta), raio aproximado pelo arco visível na lateral (~380mm). */
 function arch(x,z){
-  const torus = new THREE.Mesh(new THREE.TorusGeometry(.38,.035,10,32,Math.PI), M.body2);
+  const torus = new THREE.Mesh(new THREE.TorusGeometry(.40,.035,10,32,Math.PI), M.body2);
   torus.name = 'arco-roda';
   torus.castShadow = true;
   torus.rotation.set(Math.PI/2,0,Math.PI);
-  torus.position.set(x,.36,z);
+  torus.position.set(x,.40,z);
   shell.add(torus);
 }
-arch(FRONT_AXLE,-HALF_W-.006); arch(FRONT_AXLE,HALF_W+.006);
-arch(REAR_AXLE,-HALF_W-.006); arch(REAR_AXLE,HALF_W+.006);
+const frontAxleX = frontX + 930*M2MM;
+const rearAxleX = rearX - 1075*M2MM;
+const halfTrackM = HALF_TRACK*M2MM;
+arch(frontAxleX,-halfTrackM-.006); arch(frontAxleX,halfTrackM+.006);
+arch(rearAxleX,-halfTrackM-.006); arch(rearAxleX,halfTrackM+.006);
 
-/* Rodas na bitola real de 1580mm */
-function wheel(x,z,side){
+/* Rodas na bitola real de 1580mm, raio 335mm (aprox. aro+pneu). */
+function wheel(x,z){
   const g = new THREE.Group();
-  g.name = \`roda-\${side}-\${x<0?'dianteira':'traseira'}\`;
-  g.position.set(x,GROUND,z);
+  g.position.set(x, WHEEL_R*M2MM, z);
   wheels.add(g);
-  const tire = new THREE.Mesh(new THREE.CylinderGeometry(WHEEL_R,WHEEL_R,WHEEL_W,40),M.rubber);
+  const tire = new THREE.Mesh(new THREE.CylinderGeometry(WHEEL_R*M2MM,WHEEL_R*M2MM,WHEEL_W*M2MM,40),M.rubber);
   tire.rotation.x = Math.PI/2;
   tire.castShadow=true; tire.receiveShadow=true; g.add(tire);
   const rim = new THREE.Mesh(new THREE.CylinderGeometry(.225,.225,.245,28),M.rim);
@@ -332,9 +463,9 @@ function wheel(x,z,side){
     g.add(spoke);
   }
 }
-for(const z of [-HALF_TRACK,HALF_TRACK]){
-  wheel(FRONT_AXLE,z,z<0?'esq':'dir');
-  wheel(REAR_AXLE,z,z<0?'esq':'dir');
+for(const z of [-halfTrackM,halfTrackM]){
+  wheel(frontAxleX,z);
+  wheel(rearAxleX,z);
 }
 
 /* ================================================================
@@ -351,7 +482,7 @@ document.getElementById('viewSide').onclick=()=>setView([0,1.15,6.8],[0,.65,0]);
 document.getElementById('viewTop').onclick=()=>setView([0,7.2,.01],[0,.45,0]);
 document.getElementById('viewRear').onclick=()=>setView([6.8,1.15,0],[0,.65,0]);
 
-document.getElementById('status').textContent='Modelo 3D carregado — '+sliceCount+' fatias';
+document.getElementById('status').textContent='Modelo 3D carregado — carroceria por loft ('+N_LONG+'x'+N_RING+' segmentos)';
 
 document.getElementById('view3d').click();
 addEventListener('resize',()=>{
