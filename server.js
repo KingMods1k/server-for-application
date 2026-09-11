@@ -136,8 +136,8 @@ grid.material.opacity = .45;
 scene.add(grid);
 
 const M = {
-  body: new THREE.MeshPhysicalMaterial({color:0x69747e, metalness:.58, roughness:.28, clearcoat:.8, clearcoatRoughness:.12}),
-  body2: new THREE.MeshPhysicalMaterial({color:0x505a63, metalness:.52, roughness:.34}),
+  body: new THREE.MeshPhysicalMaterial({color:0x69747e, metalness:.58, roughness:.28, clearcoat:.8, clearcoatRoughness:.12, side:THREE.DoubleSide}),
+  body2: new THREE.MeshPhysicalMaterial({color:0x505a63, metalness:.52, roughness:.34, side:THREE.DoubleSide}),
   glass: new THREE.MeshPhysicalMaterial({color:0x3f5670, metalness:.1, roughness:.08, transmission:.5, transparent:true, opacity:.88, clearcoat:.4, side:THREE.DoubleSide}),
   rubber: new THREE.MeshStandardMaterial({color:0x080a0d, roughness:.72, metalness:.05}),
   rim: new THREE.MeshStandardMaterial({color:0x8b949c, roughness:.22, metalness:.88}),
@@ -202,12 +202,19 @@ function buildHullGeometry(){
   for(let i=0;i<idx.length-1;i++){
     const [bl0,tl0,br0,tr0] = idx[i];
     const [bl1,tl1,br1,tr1] = idx[i+1];
+    const xMid = (pts[i][0]+pts[i+1][0])/2;
+    const isCabinSeg = xMid >= CABIN_X0_ && xMid <= CABIN_X1_;
     // lateral esquerda
     indices.push(bl0,bl1,tl0, tl0,bl1,tl1);
     // lateral direita
     indices.push(br0,tr0,br1, tr0,tr1,br1);
-    // topo (cintura)
-    indices.push(tl0,tl1,tr0, tr0,tl1,tr1);
+    // topo: só fecha como face plana na faixa da cabine (onde o casco
+    // para na cintura e sobra um vão real a tapar). Fora da cabine, o
+    // casco já sobe até o topo real — não há vão, então não geramos
+    // face aqui (evita tampa espúria cobrindo o capô/traseira visíveis).
+    if(isCabinSeg){
+      indices.push(tl0,tl1,tr0, tr0,tl1,tr1);
+    }
     // base (assoalho)
     indices.push(bl0,br0,bl1, br0,br1,bl1);
   }
