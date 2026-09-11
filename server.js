@@ -65,33 +65,43 @@ const WHEEL_R = 335, WHEEL_W = 235;
 const M2MM = 0.001;
 
 // Altura do TETO/CAPÔ (silhueta de cima) por posição X: [x_mm, altura_mm]
-// Digitalizado da vista lateral: nariz baixo, sobe suave no capô, degrau
-// na base do para-brisa, teto praticamente plano, cai na tampa traseira.
+// Redigitalizado da vista lateral: nariz baixo e afilado, capô em curva
+// suave até a base do para-brisa (~999), para-brisa inclinado subindo até
+// o início do teto (~1180), teto quase plano e levemente arqueado até o
+// fim da cabine (~3550), vidro traseiro caindo, aerofólio/tampa na cauda.
 const TOP_PROFILE = [
- [0,505],[77,521],[359,612],[679,683],[999,739],[1180,760],[1180,905],
- [1319,970],[1450,1040],[1640,1080],[1832,1110],[2024,1130],[2152,1150],
- [2280,1165],[2408,1175],[2536,1180],[2664,1180],[2792,1178],[2920,1172],
- [3049,1160],[3177,1140],[3305,1110],[3433,1075],[3550,1040],[3550,860],
- [3689,795],[3817,745],[3945,700],[4073,660],[4201,600],[4329,530],
- [4400,460],[4480,380]
+ [0,430],[60,460],[150,505],[300,570],[450,625],[600,668],[750,700],
+ [900,725],[999,742],[1080,800],[1150,880],[1180,935],
+ [1250,1015],[1330,1060],[1420,1090],[1520,1108],[1640,1120],
+ [1780,1128],[1920,1133],[2060,1136],[2200,1137],[2340,1137],
+ [2480,1136],[2620,1133],[2760,1128],[2900,1120],[3040,1108],
+ [3180,1090],[3300,1065],[3400,1030],[3480,985],[3550,935],
+ [3620,880],[3700,825],[3800,770],[3920,715],[4050,665],
+ [4180,615],[4300,555],[4390,490],[4450,420],[4480,360]
 ];
 
 // Altura da SOLEIRA/BASE por posição X: [x_mm, altura_mm]
+// Redigitalizado: quase constante ao longo do vão entre-eixos, com leve
+// subida nas pontas (para-choques mais altos que a soleira central).
 const BOTTOM_PROFILE = [
- [0,230],[487,258],[679,273],[1180,220],[1832,213],[2408,218],[3061,213],
- [3550,220],[3984,213],[4368,218],[4480,240]
+ [0,255],[150,235],[350,220],[600,210],[930,205],[1400,203],
+ [1900,202],[2400,202],[2900,203],[3405,205],[3850,210],
+ [4100,220],[4300,235],[4480,250]
 ];
 
 // Largura TOTAL do carro por posição X (vista de topo): [x_mm, largura_mm]
+// Redigitalizado: nariz estreito -> alarga até o para-lama dianteiro (pico
+// perto do eixo dianteiro ~930) -> afunila levemente na cintura das portas
+// -> alarga de novo no para-lama traseiro (pico maior, carro mais largo
+// atrás, coerente com o traço da planta) -> afunila na traseira.
 const WIDTH_PROFILE = [
- [0,600],[127,792],[216,1257],[304,1554],[392,1717],[480,1880],[569,1950],
- [627,1973],[716,1985],[804,1997],[921,1997],[980,1985],[1069,1950],
- [1180,1900],[1304,1780],[1421,1730],[1539,1720],[1627,1715],[1716,1710],
- [1804,1705],[1921,1700],[2010,1698],[2127,1696],[2245,1695],[2421,1695],
- [2539,1696],[2657,1698],[2745,1700],[2862,1705],[2951,1712],[3068,1720],
- [3157,1730],[3245,1745],[3333,1770],[3480,1850],[3550,1900],[3627,1950],
- [3774,1950],[3892,2061],[3980,2031],[4068,1973],[4156,1915],[4245,1845],
- [4333,1694],[4392,1257],[4480,1000]
+ [0,520],[100,780],[220,1120],[360,1450],[500,1680],[650,1830],
+ [800,1910],[930,1948],[1050,1940],[1180,1900],[1350,1830],
+ [1550,1790],[1750,1775],[1950,1768],[2150,1765],[2350,1765],
+ [2550,1768],[2740,1775],[2900,1790],[3070,1815],[3220,1855],
+ [3350,1905],[3465,1945],[3550,1950],[3650,1935],[3760,1900],
+ [3880,1840],[3990,1755],[4100,1650],[4210,1510],[4310,1330],
+ [4400,1080],[4460,800],[4480,600]
 ];
 
 function interp(x, pts){
@@ -107,6 +117,67 @@ function interp(x, pts){
     }
   }
   return pts[pts.length-1][1];
+}
+
+/* Seção transversal REAL (vista frontal/traseira da planta): não é um
+   retângulo — o teto é estreito e arredondado, os ombros/para-lamas são
+   a parte mais larga (na altura das rodas), e a soleira volta a estreitar
+   perto do chão. Perfil normalizado: [hRel 0..1 do chão ao teto, wRel 0..1
+   da meia-largura relativa ao halfW máximo daquele X]. */
+const SECTION_PROFILE = [
+  [0.00,0.62],[0.06,0.78],[0.14,0.92],[0.22,0.99],[0.30,1.00],
+  [0.40,0.99],[0.50,0.95],[0.60,0.88],[0.70,0.78],[0.80,0.64],
+  [0.90,0.46],[0.96,0.28],[1.00,0.10]
+];
+function sectionHalfWidthNorm(hRel){
+  return interp(hRel, SECTION_PROFILE.map(p=>[p[0],p[1]]));
+}
+
+/* Gera a geometria de um prisma cuja seção transversal (plano Y-Z) segue
+   SECTION_PROFILE, extrudado ao longo de X entre xStart e xEnd, com
+   halfW/top/bottom variando linearmente entre os dois extremos da fatia
+   (para não ter degrau nem em X nem na forma). N_SIDES pontos por metade
+   do contorno (espelhado), fechado com tampas nas duas pontas. */
+const N_SIDES = 10;
+function buildSectionPrism(xStartMm, xEndMm, topStart, topEnd, bottomStart, bottomEnd, halfWStart, halfWEnd){
+  const positions = [];
+  const indices = [];
+  const ringsX = [xStartMm, xEndMm];
+  const tops = [topStart, topEnd];
+  const bottoms = [bottomStart, bottomEnd];
+  const halfWs = [halfWStart, halfWEnd];
+  const ringLen = N_SIDES*2+1; // meio-perfil espelhado (esquerda+direita), fechado
+
+  for(let ri=0; ri<2; ri++){
+    const x = ringsX[ri], top = tops[ri], bottom = bottoms[ri], halfW = halfWs[ri];
+    for(let j=0;j<=N_SIDES*2;j++){
+      const s = j/(N_SIDES*2); // 0..1 ao redor (esquerda-baixo -> topo -> direita-baixo)
+      let side, hRel;
+      if(s<=0.5){ side=-1; hRel = 1-(s/0.5); } else { side=1; hRel=(s-0.5)/0.5; }
+      const wNorm = sectionHalfWidthNorm(hRel);
+      const y = bottom + hRel*(top-bottom);
+      const z = side*halfW*wNorm;
+      positions.push(x*M2MM, y*M2MM, z*M2MM);
+    }
+  }
+  for(let j=0;j<ringLen-1;j++){
+    const a=j, b=j+1, c=ringLen+j, d=ringLen+j+1;
+    indices.push(a,c,b, b,c,d);
+  }
+  // tampas nas duas pontas (leque a partir do ponto médio do topo)
+  const capCenterFront = positions.length/3;
+  positions.push(xStartMm*M2MM, (tops[0]+bottoms[0])/2*M2MM, 0);
+  for(let j=0;j<ringLen-1;j++) indices.push(capCenterFront, j, j+1);
+  const capCenterBack = positions.length/3;
+  positions.push(xEndMm*M2MM, (tops[1]+bottoms[1])/2*M2MM, 0);
+  const off = ringLen;
+  for(let j=0;j<ringLen-1;j++) indices.push(capCenterBack, off+j+1, off+j);
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions,3));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  return geo;
 }
 
 const scene = new THREE.Scene();
@@ -190,31 +261,33 @@ function box(wMm, hMm, dMm, xMm, yMm, zMm, mat, name, parent=shell){
 }
 
 /* ================================================================
-   CARROCERIA POR FATIAS TRANSVERSAIS FINAS
-   A cada STEP mm ao longo do comprimento, cria uma caixa fina cuja
-   largura (Z) e altura (Y) vêm diretamente dos perfis digitalizados
-   da planta. É uma aproximação poligonal do contorno real — sem
-   malha contínua (loft) — só caixas discretas empilhadas em X.
+   CARROCERIA POR FATIAS TRANSVERSAIS — SEÇÃO REAL (não retangular)
+   A cada STEP mm ao longo do comprimento, cria um prisma cuja seção
+   transversal (plano Y-Z) segue SECTION_PROFILE: teto estreito e
+   arredondado, ombros largos na altura das rodas, soleira estreitando
+   perto do chão — como a vista frontal/traseira real da planta mostra.
+   Fatias discretas e independentes (sem malha contínua/loft).
    ================================================================ */
-const STEP = 60; // mm — resolução longitudinal (quanto menor, mais fatias)
+const STEP = 15; // mm — resolução longitudinal (quanto menor, mais fatias)
 const N_SLICES = Math.floor(LENGTH/STEP);
 
 let sliceCount = 0;
 for(let i=0;i<N_SLICES;i++){
   const xStart = i*STEP;
-  const xCenter = xStart + STEP/2;
-  if(xCenter >= LENGTH) break;
+  const xEnd = Math.min(xStart+STEP, LENGTH);
+  if(xStart >= LENGTH) break;
 
-  const top = interp(xCenter, TOP_PROFILE);
-  const bottom = interp(xCenter, BOTTOM_PROFILE);
-  const totalW = interp(xCenter, WIDTH_PROFILE);
-  const h = Math.max(top-bottom, 8);
-  const yCenter = bottom + h/2;
+  const topS = interp(xStart, TOP_PROFILE), topE = interp(xEnd, TOP_PROFILE);
+  const botS = interp(xStart, BOTTOM_PROFILE), botE = interp(xEnd, BOTTOM_PROFILE);
+  const halfWS = interp(xStart, WIDTH_PROFILE)/2, halfWE = interp(xEnd, WIDTH_PROFILE)/2;
 
-  // material varia: cabine (faixa 1180-3550) recebe tom de vidro/teto
-  // acima da cintura; carroceria opaca abaixo. Aqui simplificado: toda
-  // a fatia é carroceria opaca — vidro/teto são camadas extras abaixo.
-  box(STEP*1.02, h, totalW, xCenter, yCenter, 0, M.body, 'faixa-carroceria-'+i);
+  const geo = buildSectionPrism(xStart, xEnd, topS, topE, botS, botE, halfWS, halfWE);
+  const mesh = new THREE.Mesh(geo, M.body);
+  mesh.name = 'faixa-carroceria-'+i;
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  mesh.position.x = originOffset;
+  shell.add(mesh);
   sliceCount++;
 }
 
@@ -230,7 +303,7 @@ function beltHeightAt(x){
   const bottom = interp(x, BOTTOM_PROFILE);
   return bottom + (top-bottom)*0.62;
 }
-const CABIN_STEP = 60;
+const CABIN_STEP = 15;
 const N_CABIN_SLICES = Math.floor((CABIN_X1-CABIN_X0)/CABIN_STEP);
 for(let i=0;i<N_CABIN_SLICES;i++){
   const xStart = CABIN_X0 + i*CABIN_STEP;
@@ -243,7 +316,22 @@ for(let i=0;i<N_CABIN_SLICES;i++){
   const h = Math.max(top-belt, 8);
   const yCenter = belt + h/2;
 
-  box(CABIN_STEP*1.02, h, totalW, xCenter, yCenter, 0, M.glass, 'faixa-cabine-'+i);
+  box(CABIN_STEP*1.6, h, totalW, xCenter, yCenter, 0, M.glass, 'faixa-cabine-'+i);
+}
+
+/* Para-brisa dianteiro: painel inclinado fechando a cabine entre o capô
+   (X=999, onde o TOP_PROFILE começa a subir forte) e o início da cabine
+   (CABIN_X0=1180), na altura da cintura até o topo. */
+{
+  const xA = 999, xB = CABIN_X0;
+  const yA = interp(xA, TOP_PROFILE);
+  const yB = interp(xB, TOP_PROFILE);
+  const beltA = beltHeightAt(xA);
+  const xCenter = (xA+xB)/2;
+  const yCenter = (yA+beltA)/2 + (yB-beltA)/4;
+  const totalW = interp(xCenter, WIDTH_PROFILE) * 0.78;
+  const windshield = box(xB-xA, yB-beltA, totalW, xCenter, yCenter, 0, M.glass, 'para-brisa');
+  windshield.rotation.z = Math.atan2(yB-beltA, xB-xA) - Math.PI/2;
 }
 
 /* Teto sólido: faixa fina no topo da cabine, do mesmo jeito, cobrindo
@@ -262,7 +350,7 @@ for(let i=0;i<N_ROOF_SLICES;i++){
   const h = Math.max(top-under, 6);
   const yCenter = under + h/2;
 
-  box(ROOF_STEP*1.02, h, totalW, xCenter, yCenter, 0, M.cabinBody, 'faixa-teto-'+i);
+  box(ROOF_STEP*1.6, h, totalW, xCenter, yCenter, 0, M.cabinBody, 'faixa-teto-'+i);
 }
 
 /* Para-choques, faróis e lanternas nas pontas, pelas cotas reais. */
@@ -272,7 +360,7 @@ box(140, 200, halfWFront*1.9, 40, interp(40,BOTTOM_PROFILE)+100, 0, M.body2, 'pa
 box(140, 200, halfWRear*1.9, LENGTH-40, interp(LENGTH-40,BOTTOM_PROFILE)+100, 0, M.body2, 'parachoque-traseiro');
 for(const side of [-1,1]){
   box(50, 150, 340, 55, interp(300,TOP_PROFILE)*0.72, side*halfWFront*0.62, M.lamp, 'farol');
-  box(50, 140, 340, LENGTH-55, interp(LENGTH-300,TOP_PROFILE)*0.80, side*halfWRear*0.62, M.red, 'lanterna');
+  box(50, 140, 340, LENGTH-55, interp(LENGTH-300,TOP_PROFILE)*0.55, side*halfWRear*0.78, M.red, 'lanterna');
 }
 
 /* Caixas de roda: arcos nos eixos reais. */
