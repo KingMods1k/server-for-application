@@ -8,392 +8,343 @@ app.get('/', (req, res) => {
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>Carro 3D — carroceria</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Auron Company Invest — Fábrica &amp; Concessionária</title>
 <style>
-*{box-sizing:border-box}
-html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#090b0f;font-family:Arial,sans-serif;color:#fff}
-#app{position:fixed;inset:0}
-canvas{display:block}
-.hud{position:fixed;left:18px;top:18px;z-index:5;background:rgba(8,10,14,.82);border:1px solid rgba(255,255,255,.12);backdrop-filter:blur(12px);border-radius:16px;padding:15px 17px;line-height:1.5;max-width:620px}
-.hud b{font-size:17px}.hud small{opacity:.75}
-.badge{display:inline-block;margin:8px 5px 0 0;padding:5px 8px;border-radius:7px;background:rgba(255,255,255,.08);font-size:11px}
-.controls{position:fixed;right:18px;bottom:18px;z-index:5;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
-button{border:1px solid rgba(255,255,255,.14);background:rgba(15,18,24,.9);color:#fff;border-radius:11px;padding:11px 14px;cursor:pointer}
-button:active{transform:translateY(1px)}
-#status{position:fixed;left:18px;top:155px;z-index:10;padding:9px 12px;border-radius:9px;background:rgba(0,0,0,.72);font-size:12px}
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Archivo:wght@400;500;600;700&display=swap');
+
+:root{
+  --bg: #0a0a0c;
+  --bg-alt: #111114;
+  --gold: #c9a24b;
+  --gold-dim: #8a7038;
+  --text: #e8e6e0;
+  --text-dim: #8a8a90;
+  --line: #2a2a2f;
+  --red: #7d1f1f;
+}
+
+*{margin:0;padding:0;box-sizing:border-box}
+
+html{scroll-behavior:smooth}
+
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:'Archivo',sans-serif;
+  overflow-x:hidden;
+}
+
+h1,h2,h3,.display{
+  font-family:'Bebas Neue',sans-serif;
+  letter-spacing:.01em;
+  font-weight:400;
+  line-height:.92;
+}
+
+::selection{background:var(--gold);color:var(--bg)}
+
+/* ---------- reveal on scroll ---------- */
+.reveal{
+  opacity:0;
+  transform:translateY(28px);
+  transition:opacity .9s cubic-bezier(.16,1,.3,1), transform .9s cubic-bezier(.16,1,.3,1);
+}
+.reveal.in{opacity:1;transform:translateY(0)}
+.reveal-delay-1{transition-delay:.12s}
+.reveal-delay-2{transition-delay:.24s}
+.reveal-delay-3{transition-delay:.36s}
+
+@media (prefers-reduced-motion: reduce){
+  .reveal{opacity:1;transform:none;transition:none}
+  .type-line span{animation:none !important;opacity:1 !important}
+}
+
+/* ---------- nav ---------- */
+nav{
+  position:fixed;top:0;left:0;right:0;z-index:100;
+  display:flex;justify-content:space-between;align-items:center;
+  padding:26px 6vw;
+  mix-blend-mode:difference;
+}
+.nav-mark{font-family:'Bebas Neue';font-size:22px;letter-spacing:.08em}
+.nav-links{display:flex;gap:36px;font-size:13px;letter-spacing:.04em}
+.nav-links a{color:var(--text);text-decoration:none;opacity:.8;transition:opacity .25s}
+.nav-links a:hover{opacity:1}
+@media (max-width:720px){.nav-links{display:none}}
+
+/* ---------- hero ---------- */
+.hero{
+  min-height:100vh;
+  display:flex;
+  flex-direction:column;
+  justify-content:flex-end;
+  padding:0 6vw 8vh;
+  position:relative;
+  border-bottom:1px solid var(--line);
+}
+.hero-bg{
+  position:absolute;inset:0;
+  background:
+    radial-gradient(ellipse 60% 50% at 70% 20%, rgba(201,162,75,.10), transparent),
+    repeating-linear-gradient(100deg, transparent 0 120px, rgba(255,255,255,.018) 120px 121px);
+  pointer-events:none;
+}
+.hero-eyebrow{
+  font-size:14px;color:var(--gold);letter-spacing:.14em;
+  margin-bottom:22px;
+}
+.hero-title{
+  font-size:clamp(64px,13vw,168px);
+  color:var(--text);
+}
+.hero-title .line{overflow:hidden;display:block}
+.hero-title .line span{
+  display:inline-block;
+  transform:translateY(105%);
+  animation:riseUp .9s cubic-bezier(.16,1,.3,1) forwards;
+}
+.hero-title .line:nth-child(1) span{animation-delay:.15s}
+.hero-title .line:nth-child(2) span{animation-delay:.32s}
+@keyframes riseUp{to{transform:translateY(0)}}
+
+.hero-sub{
+  max-width:520px;
+  margin-top:28px;
+  font-size:17px;
+  line-height:1.6;
+  color:var(--text-dim);
+  opacity:0;
+  animation:fadeIn 1s ease forwards;
+  animation-delay:.75s;
+}
+@keyframes fadeIn{to{opacity:1}}
+
+.hero-meta{
+  display:flex;gap:48px;margin-top:56px;
+  opacity:0;animation:fadeIn 1s ease forwards;animation-delay:.95s;
+}
+.hero-meta div{font-size:13px;color:var(--text-dim)}
+.hero-meta strong{display:block;font-family:'Bebas Neue';font-size:28px;color:var(--text);letter-spacing:.02em}
+
+/* ---------- section shell ---------- */
+section{padding:140px 6vw;position:relative}
+.section-alt{background:var(--bg-alt)}
+.eyebrow{font-size:13px;color:var(--gold);letter-spacing:.1em;margin-bottom:18px}
+.section-title{font-size:clamp(40px,6vw,84px);max-width:900px}
+.section-lede{max-width:560px;color:var(--text-dim);font-size:17px;line-height:1.7;margin-top:28px}
+
+/* ---------- sobre ---------- */
+.sobre-grid{
+  display:grid;grid-template-columns:1.1fr .9fr;gap:80px;margin-top:80px;
+}
+@media (max-width:900px){.sobre-grid{grid-template-columns:1fr}}
+.sobre-stats{display:flex;flex-direction:column;gap:0}
+.stat-row{
+  display:flex;justify-content:space-between;align-items:baseline;
+  padding:26px 0;border-top:1px solid var(--line);
+}
+.stat-row:last-child{border-bottom:1px solid var(--line)}
+.stat-label{font-size:14px;color:var(--text-dim)}
+.stat-value{font-family:'Bebas Neue';font-size:42px;color:var(--gold)}
+
+/* ---------- linha (modelos) ---------- */
+.linha-list{margin-top:70px;border-top:1px solid var(--line)}
+.linha-item{
+  display:grid;grid-template-columns:70px 1fr 220px 40px;
+  align-items:center;
+  padding:34px 0;
+  border-bottom:1px solid var(--line);
+  cursor:pointer;
+  transition:padding-left .3s ease, background .3s ease;
+}
+.linha-item:hover{padding-left:18px;background:rgba(201,162,75,.04)}
+.linha-num{font-family:'Bebas Neue';font-size:16px;color:var(--gold-dim)}
+.linha-name{font-family:'Bebas Neue';font-size:clamp(26px,4vw,48px);letter-spacing:.01em}
+.linha-tag{font-size:13px;color:var(--text-dim);letter-spacing:.04em}
+.linha-status{
+  font-size:11px;letter-spacing:.08em;color:var(--text-dim);
+  border:1px solid var(--line);border-radius:100px;
+  padding:7px 14px;text-align:center;white-space:nowrap;justify-self:start;
+}
+.linha-arrow{font-size:22px;color:var(--gold);opacity:0;transform:translateX(-8px);transition:.3s}
+.linha-item:hover .linha-arrow{opacity:1;transform:translateX(0)}
+@media (max-width:720px){
+  .linha-item{grid-template-columns:40px 1fr;row-gap:10px}
+  .linha-status,.linha-arrow{grid-column:2}
+}
+
+/* preview 3D placeholder (visual, sem three.js) */
+.preview-note{
+  margin-top:56px;padding:28px 30px;border:1px dashed var(--line);
+  border-radius:4px;font-size:14px;color:var(--text-dim);line-height:1.7;
+  display:flex;gap:18px;align-items:flex-start;
+}
+.preview-note .dot{width:8px;height:8px;border-radius:50%;background:var(--gold);margin-top:7px;flex:none}
+
+/* ---------- carreiras ---------- */
+.carreiras{
+  display:grid;grid-template-columns:1fr 1fr;gap:80px;margin-top:80px;
+}
+@media (max-width:900px){.carreiras{grid-template-columns:1fr}}
+.carreiras-copy p{color:var(--text-dim);font-size:17px;line-height:1.75;margin-bottom:20px}
+.uniform-card{
+  border:1px solid var(--line);padding:44px 38px;
+  background:linear-gradient(160deg, rgba(201,162,75,.06), transparent 60%);
+}
+.uniform-card h3{font-size:30px;margin-bottom:16px}
+.uniform-list{list-style:none;display:flex;flex-direction:column;gap:14px;margin-top:24px}
+.uniform-list li{
+  display:flex;gap:14px;font-size:15px;color:var(--text-dim);align-items:baseline;
+}
+.uniform-list li::before{content:'—';color:var(--gold);flex:none}
+
+/* ---------- cta final ---------- */
+.cta{
+  min-height:70vh;display:flex;flex-direction:column;justify-content:center;
+  text-align:left;border-top:1px solid var(--line);
+}
+.cta-title{font-size:clamp(48px,9vw,120px);max-width:1000px}
+.cta-title em{font-style:normal;color:var(--gold)}
+.cta-actions{display:flex;gap:20px;margin-top:48px;flex-wrap:wrap}
+.btn{
+  font-family:'Archivo';font-size:15px;font-weight:600;
+  padding:18px 34px;border-radius:2px;text-decoration:none;
+  transition:transform .25s ease, background .25s ease;
+  display:inline-block;
+}
+.btn-primary{background:var(--gold);color:var(--bg)}
+.btn-primary:hover{transform:translateY(-3px)}
+.btn-ghost{border:1px solid var(--line);color:var(--text)}
+.btn-ghost:hover{border-color:var(--gold);color:var(--gold)}
+
+footer{
+  padding:50px 6vw;border-top:1px solid var(--line);
+  display:flex;justify-content:space-between;color:var(--text-dim);font-size:13px;
+  flex-wrap:wrap;gap:16px;
+}
 </style>
 </head>
 <body>
-<div id="app"></div>
-<div id="status">Inicializando 3D…</div>
-<div class="hud">
-  <b>Modelo 3D — carroceria por objetos</b><br>
-  <small>Reconstrução visual da planta técnica. Apenas a carroceria: casco, capô, para-lamas, portas, pilares, teto, vidros e traseira. Cada parte é um objeto separado.</small><br>
-  <span class="badge">4480 × 1950 × 1250 mm</span>
-  <span class="badge">Entre-eixos: 2475 mm</span>
-  <span class="badge">Bitola: 1580 mm</span>
-  <br><br>Arraste para girar · roda do mouse para zoom
-</div>
-<div class="controls">
-  <button id="view3d">3D</button>
-  <button id="viewFront">Frente</button>
-  <button id="viewSide">Lateral</button>
-  <button id="viewTop">Superior</button>
-  <button id="viewRear">Traseira</button>
-</div>
 
-<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.179.1/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.179.1/examples/jsm/"}}</script>
+<nav>
+  <div class="nav-mark">AURON</div>
+  <div class="nav-links">
+    <a href="#sobre">Sobre</a>
+    <a href="#linha">Linha</a>
+    <a href="#carreiras">Carreiras</a>
+    <a href="#investir">Investir</a>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="hero-bg"></div>
+  <div class="hero-eyebrow">Auron Company Invest — Fábrica &amp; Concessionária</div>
+  <h1 class="hero-title">
+    <span class="line"><span>ENGENHARIA</span></span>
+    <span class="line"><span>EM MOVIMENTO.</span></span>
+  </h1>
+  <p class="hero-sub">Projetamos, fabricamos e entregamos veículos com a mesma régua: precisão de linha de montagem e obsessão pelo detalhe. Esta é a Auron.</p>
+  <div class="hero-meta">
+    <div><strong>03</strong>modelos em linha</div>
+    <div><strong>2026</strong>ano de fundação</div>
+    <div><strong>01</strong>fábrica-sede</div>
+  </div>
+</header>
+
+<section id="sobre">
+  <div class="eyebrow reveal">Sobre a Auron</div>
+  <h2 class="section-title reveal reveal-delay-1">Da chapa de aço<br>ao showroom.</h2>
+  <div class="sobre-grid">
+    <p class="section-lede reveal reveal-delay-2">A Auron nasce para ocupar o espaço entre a engenharia pesada e a experiência de quem compra o carro pronto. Uma única companhia cuidando de toda a cadeia: fábrica própria, concessionária própria, padrão único do primeiro parafuso à entrega das chaves.</p>
+    <div class="sobre-stats reveal reveal-delay-3">
+      <div class="stat-row"><span class="stat-label">Capacidade de produção</span><span class="stat-value">40/dia</span></div>
+      <div class="stat-row"><span class="stat-label">Postos de trabalho diretos</span><span class="stat-value">180</span></div>
+      <div class="stat-row"><span class="stat-label">Concessionárias planejadas</span><span class="stat-value">06</span></div>
+    </div>
+  </div>
+</section>
+
+<section id="linha" class="section-alt">
+  <div class="eyebrow reveal">Linha de produção</div>
+  <h2 class="section-title reveal reveal-delay-1">Os modelos<br>Auron.</h2>
+  <p class="section-lede reveal reveal-delay-2">Três modelos abrem a linha. As fichas técnicas completas e os modelos 3D interativos entram no ar nas próximas semanas — hoje, a apresentação oficial dos nomes e posicionamento.</p>
+
+  <div class="linha-list">
+    <div class="linha-item reveal">
+      <span class="linha-num">01</span>
+      <span class="linha-name">Auron Ferro</span>
+      <span class="linha-tag">Esportivo de entrada</span>
+      <span class="linha-status">Em fábrica</span>
+      <span class="linha-arrow">→</span>
+    </div>
+    <div class="linha-item reveal reveal-delay-1">
+      <span class="linha-num">02</span>
+      <span class="linha-name">Auron Vetor</span>
+      <span class="linha-tag">Sedã executivo</span>
+      <span class="linha-status">Em fábrica</span>
+      <span class="linha-arrow">→</span>
+    </div>
+    <div class="linha-item reveal reveal-delay-2">
+      <span class="linha-num">03</span>
+      <span class="linha-name">Auron Marco</span>
+      <span class="linha-tag">SUV de linha</span>
+      <span class="linha-status">Pré-produção</span>
+      <span class="linha-arrow">→</span>
+    </div>
+  </div>
+
+  <div class="preview-note reveal reveal-delay-3">
+    <span class="dot"></span>
+    <span>Visualização 3D dos modelos: em desenvolvimento. Esta apresentação traz o posicionamento de marca e a estrutura da linha — os modelos interativos entram nesta mesma página assim que estiverem prontos.</span>
+  </div>
+</section>
+
+<section id="carreiras">
+  <div class="eyebrow reveal">Vista a camisa</div>
+  <h2 class="section-title reveal reveal-delay-1">Quem constrói<br>a Auron.</h2>
+  <div class="carreiras">
+    <div class="carreiras-copy reveal reveal-delay-2">
+      <p>Toda empresa começa com quem topa entrar antes de existir prova de que vai dar certo. Hoje convidamos quem está nesta sala a ocupar um posto na Auron — da linha de produção ao balcão da concessionária.</p>
+      <p>Quem veste a camisa, entra na fundação da companhia. Não como espectador: como parte do time que decide como a Auron vai ser.</p>
+    </div>
+    <div class="uniform-card reveal reveal-delay-3">
+      <h3>Times abertos hoje</h3>
+      <ul class="uniform-list">
+        <li>Linha de montagem e engenharia</li>
+        <li>Vendas e relacionamento — concessionária</li>
+        <li>Marca, comunicação e eventos</li>
+        <li>Operações e expansão</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="investir" class="cta section-alt">
+  <div class="eyebrow reveal">Para quem fica de fora do quadro</div>
+  <h2 class="cta-title reveal reveal-delay-1">Não trabalha na Auron?<br>Então <em>entre</em> na Auron.</h2>
+  <p class="section-lede reveal reveal-delay-2">Quem não veste a camisa hoje ainda tem um lugar: como cliente da primeira hora ou investidor da primeira rodada. A fábrica está de portas abertas.</p>
+  <div class="cta-actions reveal reveal-delay-3">
+    <a href="#" class="btn btn-primary">Quero investir na Auron</a>
+    <a href="#" class="btn btn-ghost">Reservar um modelo</a>
+  </div>
+</section>
+
+<footer>
+  <span>Auron Company Invest — Fábrica &amp; Concessionária</span>
+  <span>Apresentação institucional · 2026</span>
+</footer>
+
 <script>
-window.addEventListener("error",e=>{
-  const s=document.getElementById("status");
-  if(s){s.style.background="#5b1515";s.textContent="Erro 3D: "+(e.message||"falha");}
-});
-window.addEventListener("unhandledrejection",e=>{
-  const s=document.getElementById("status");
-  if(s){s.style.background="#5b1515";s.textContent="Erro 3D: "+String(e.reason||"falha");}
-});
+const io = new IntersectionObserver((entries)=>{
+  entries.forEach(e=>{ if(e.isIntersecting) e.target.classList.add('in'); });
+},{threshold:.15});
+document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
 </script>
 
-<script type="module">
-import * as THREE from "three";
-import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-
-/* COTAS DA PLANTA — X=0 no nariz */
-const LENGTH=4480, WIDTH=1950, HEIGHT=1250;
-const HALF_TRACK=790, WHEELBASE=2475;
-const FRONT_AXLE=930, REAR_AXLE=3405;
-const SCALE=.001;
-const ORIGIN=-LENGTH*SCALE/2;
-
-/* cena */
-const scene=new THREE.Scene();
-scene.background=new THREE.Color(0x090b0f);
-scene.fog=new THREE.Fog(0x090b0f,12,28);
-
-const camera=new THREE.PerspectiveCamera(38,innerWidth/innerHeight,.01,100);
-camera.position.set(5.8,2.25,5.1);
-
-const renderer=new THREE.WebGLRenderer({antialias:true});
-renderer.setPixelRatio(Math.min(devicePixelRatio,2));
-renderer.setSize(innerWidth,innerHeight);
-renderer.outputColorSpace=THREE.SRGBColorSpace;
-renderer.toneMapping=THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure=1.08;
-document.getElementById("app").appendChild(renderer.domElement);
-
-const controls=new OrbitControls(camera,renderer.domElement);
-controls.enableDamping=true;
-controls.dampingFactor=.08;
-controls.minDistance=2.8;
-controls.maxDistance=11;
-controls.target.set(0,.62,0);
-controls.maxPolarAngle=Math.PI*.49;
-
-scene.add(new THREE.HemisphereLight(0xe8eef7,0x20242b,1.5));
-const sun=new THREE.DirectionalLight(0xffffff,2.4);
-sun.position.set(-4,7,5);
-scene.add(sun);
-const fill=new THREE.DirectionalLight(0xffffff,.65);
-fill.position.set(4,3,-5);
-scene.add(fill);
-
-const floor=new THREE.Mesh(
-  new THREE.CircleGeometry(14,96),
-  new THREE.MeshStandardMaterial({color:0x10141a,roughness:.86,metalness:.04})
-);
-floor.rotation.x=-Math.PI/2;
-scene.add(floor);
-const grid=new THREE.GridHelper(14,28,0x242a33,0x171b21);
-grid.material.transparent=true;
-grid.material.opacity=.42;
-scene.add(grid);
-
-/* materiais — somente carroceria */
-const M={
-  body:new THREE.MeshPhysicalMaterial({
-    color:0x69747e,metalness:.55,roughness:.3,clearcoat:.7,clearcoatRoughness:.15,
-    side:THREE.DoubleSide
-  }),
-  bodyDark:new THREE.MeshPhysicalMaterial({
-    color:0x4e5862,metalness:.5,roughness:.34,clearcoat:.45,
-    side:THREE.DoubleSide
-  }),
-  edge:new THREE.MeshStandardMaterial({
-    color:0x343b43,metalness:.65,roughness:.32,side:THREE.DoubleSide
-  }),
-  glass:new THREE.MeshPhysicalMaterial({
-    color:0x26394c,metalness:.08,roughness:.12,transmission:.18,
-    transparent:true,opacity:.9,side:THREE.DoubleSide
-  }),
-  black:new THREE.MeshStandardMaterial({
-    color:0x080a0d,metalness:.15,roughness:.58
-  })
-};
-
-const car=new THREE.Group();
-scene.add(car);
-const body=new THREE.Group();
-car.add(body);
-
-/* PRIMITIVO PRINCIPAL: todos os elementos continuam objetos separados */
-function box(name,w,h,d,x,y,z,mat=M.body,rz=0){
-  const m=new THREE.Mesh(
-    new THREE.BoxGeometry(w*SCALE,h*SCALE,d*SCALE),
-    mat
-  );
-  m.name=name;
-  m.position.set(x*SCALE+ORIGIN,y*SCALE,z*SCALE);
-  m.rotation.z=rz;
-  m.castShadow=true;
-  m.receiveShadow=true;
-  body.add(m);
-  return m;
-}
-
-function panel(name,w,h,d,x,y,z,mat=M.body,rz=0){
-  return box(name,w,h,d,x,y,z,mat,rz);
-}
-
-/* =========================================================
-   1. CASCO INFERIOR
-   Baixo e contínuo, seguindo a silhueta da planta.
-   ========================================================= */
-const segments=[
-  [0,260,900],
-  [260,720,1810],
-  [720,1180,1880],
-  [1180,1850,1790],
-  [1850,2700,1770],
-  [2700,3100,1800],
-  [3100,3560,1900],
-  [3560,4050,1780],
-  [4050,4480,1680]
-];
-
-for(const [x0,x1,w] of segments){
-  const len=x1-x0;
-  box("casco-"+x0,len+18,235,w,(x0+x1)/2,315,0,M.body);
-}
-
-/* soleiras laterais */
-for(const z of [-865,865]){
-  box("soleira",2250,115,105,(1850),445,z,M.bodyDark);
-  box("soleira-dianteira",900,100,120,820,435,z,M.body);
-}
-
-/* =========================================================
-   2. PARA-LAMAS
-   A planta mostra os para-lamas mais largos que a cintura.
-   Fazemos cada para-lama como conjunto de objetos, deixando
-   o volume da carroceria em volta das rodas.
-   ========================================================= */
-function fender(axle,name){
-  const zOuter=930;
-  const zInner=655;
-  /* trecho dianteiro/traseiro do arco */
-  for(const side of [-1,1]){
-    const z=side*770;
-    box(name+"-frente",390,150,150,axle-245,470,z,M.body);
-    box(name+"-topo",360,115,190,axle,535,z,M.body);
-    box(name+"-tras",390,150,150,axle+245,470,z,M.body);
-    /* borda externa baixa */
-    box(name+"-borda",430,75,80,axle,390,side*900,M.edge);
-  }
-}
-fender(FRONT_AXLE,"paralama-dianteiro");
-fender(REAR_AXLE,"paralama-traseiro");
-
-/* =========================================================
-   3. CAPÔ — inclinação para baixo no nariz
-   ========================================================= */
-{
-  const x0=150,x1=1010,y0=535,y1=485;
-  const len=Math.hypot(x1-x0,y1-y0);
-  const p=box("capo",len,42,1540,(x0+x1)/2,(y0+y1)/2,0,M.bodyDark);
-  p.rotation.z=Math.atan2(y1-y0,x1-x0);
-}
-
-/* borda frontal do capô */
-box("borda-capo",95,55,1600,120,510,0,M.body);
-
-/* =========================================================
-   4. PAINÉIS LATERAIS / PORTAS
-   A lateral da planta é longa e limpa, com a cintura baixa.
-   ========================================================= */
-for(const side of [-1,1]){
-  const z=side*885;
-
-  box("lateral-dianteira",930,250,38,1500,565,z,M.body);
-  box("porta-dianteira",760,270,34,2050,565,z,M.bodyDark);
-  box("porta-traseira",720,270,34,2780,565,z,M.bodyDark);
-  box("lateral-traseira",520,260,38,3350,565,z,M.body);
-
-  /* linhas inferiores das portas */
-  box("linha-porta-1",730,28,24,2050,445,z*1.002,M.edge);
-  box("linha-porta-2",700,28,24,2780,445,z*1.002,M.edge);
-
-  /* reforço do para-lama traseiro */
-  box("ombro-traseiro",650,110,80,3350,665,side*925,M.body);
-}
-
-/* =========================================================
-   5. CINTURA E PILARES
-   ========================================================= */
-const BELT=690;
-const ROOF=1125;
-
-/* cintura lateral */
-for(const side of [-1,1]){
-  const z=side*890;
-  box("cintura",2200,65,65,2250,BELT,z,M.bodyDark);
-
-  /* pilar A inclinado */
-  const a0={x:1030,y:BELT+20}, a1={x:1260,y:ROOF-20};
-  let len=Math.hypot(a1.x-a0.x,a1.y-a0.y);
-  let a=box("pilar-A",len,95,75,(a0.x+a1.x)/2,(a0.y+a1.y)/2,z,M.body);
-  a.rotation.z=Math.atan2(a1.y-a0.y,a1.x-a0.x);
-
-  /* pilar B */
-  box("pilar-B",90,455,78,2170,(BELT+ROOF)/2,z,M.body);
-
-  /* pilar C inclinado */
-  const c0={x:3240,y:ROOF-15}, c1={x:3500,y:BELT};
-  len=Math.hypot(c1.x-c0.x,c1.y-c0.y);
-  let c=box("pilar-C",len,92,75,(c0.x+c1.x)/2,(c0.y+c1.y)/2,z,M.body);
-  c.rotation.z=Math.atan2(c1.y-c0.y,c1.x-c0.x);
-}
-
-/* =========================================================
-   6. VIDROS LATERAIS
-   Dois painéis por lado, seguindo o perfil trapezoidal.
-   São objetos planos/volumétricos separados.
-   ========================================================= */
-for(const side of [-1,1]){
-  const z=side*900;
-
-  box("vidro-dianteiro",820,360,18,1660,850,z,M.glass,
-      -0.08);
-
-  box("vidro-traseiro",850,350,18,2740,850,z,M.glass,
-      0.08);
-}
-
-/* faixas superiores que moldam os vidros */
-for(const side of [-1,1]){
-  const z=side*925;
-  box("moldura-superior",2050,55,60,2270,1085,z,M.body);
-}
-
-/* =========================================================
-   7. TETO
-   Em vez de uma placa gigantesca, três painéis longitudinais
-   sobrepostos para acompanhar a forma do desenho.
-   ========================================================= */
-box("teto-central",1580,48,1060,2180,1125,0,M.bodyDark);
-box("teto-dianteiro",720,38,1080,1350,1080,0,M.body);
-box("teto-traseiro",720,42,1080,3000,1085,0,M.body);
-
-/* molduras laterais do teto */
-for(const side of [-1,1]){
-  box("moldura-teto",1950,55,72,2200,1090,side*575,M.body);
-}
-
-/* =========================================================
-   8. PARA-BRISA INCLINADO
-   ========================================================= */
-{
-  const x0=1015,x1=1260,y0=690,y1=1095;
-  const len=Math.hypot(x1-x0,y1-y0);
-  const p=box("para-brisa",len,32,1500,(x0+x1)/2,(y0+y1)/2,0,M.glass);
-  p.rotation.z=Math.atan2(y1-y0,x1-x0);
-}
-
-/* travessa inferior do para-brisa */
-{
-  const x0=990,x1=1280,y0=680,y1=690;
-  const len=Math.hypot(x1-x0,y1-y0);
-  const p=box("base-para-brisa",len,48,1570,(x0+x1)/2,(y0+y1)/2,0,M.body);
-  p.rotation.z=Math.atan2(y1-y0,x1-x0);
-}
-
-/* =========================================================
-   9. VIGIA TRASEIRA — descida para o porta-malas
-   ========================================================= */
-{
-  const x0=3000,x1=3500,y0=1090,y1=690;
-  const len=Math.hypot(x1-x0,y1-y0);
-  const p=box("vigia-traseira",len,32,1460,(x0+x1)/2,(y0+y1)/2,0,M.glass);
-  p.rotation.z=Math.atan2(y1-y0,x1-x0);
-}
-
-/* moldura da vigia */
-{
-  const x0=2970,x1=3530,y0=1110,y1=680;
-  const len=Math.hypot(x1-x0,y1-y0);
-  const p=box("moldura-vigia",len,55,1510,(x0+x1)/2,(y0+y1)/2,0,M.body);
-  p.rotation.z=Math.atan2(y1-y0,x1-x0);
-}
-
-/* =========================================================
-   10. TAMPA TRASEIRA E QUARTOS
-   ========================================================= */
-box("tampa-porta-malas",720,115,1510,3800,610,0,M.bodyDark);
-
-for(const side of [-1,1]){
-  box("quarto-traseiro",480,240,55,3600,610,side*900,M.body);
-  box("canto-traseiro",350,190,70,4140,510,side*790,M.body);
-}
-
-/* painel traseiro baixo */
-box("painel-traseiro",360,230,1660,4310,370,0,M.bodyDark);
-box("travessa-traseira",105,90,1700,4400,305,0,M.edge);
-
-/* frente baixa */
-box("painel-frontal",320,190,1640,70,350,0,M.bodyDark);
-box("travessa-frontal",95,80,1700,20,285,0,M.edge);
-
-/* =========================================================
-   11. PEÇAS DE ACABAMENTO QUE AINDA SÃO CARROCERIA
-   ========================================================= */
-for(const side of [-1,1]){
-  box("barra-superior-lateral",2500,38,35,2200,735,side*936,M.edge);
-  box("barra-inferior-lateral",2500,32,35,2200,430,side*936,M.edge);
-}
-
-/* chão de dentro da carroceria, bem baixo */
-box("assoalho",3000,70,1450,2200,235,0,M.bodyDark);
-
-/* vistas */
-function setView(pos,target=[0,.62,0]){
-  camera.position.set(...pos);
-  controls.target.set(...target);
-  controls.update();
-}
-document.getElementById("view3d").onclick=()=>setView([5.8,2.25,5.1]);
-document.getElementById("viewFront").onclick=()=>setView([-6.8,1.1,0],[0,.58,0]);
-document.getElementById("viewSide").onclick=()=>setView([0,1.1,6.8],[0,.62,0]);
-document.getElementById("viewTop").onclick=()=>setView([0,7.2,.01],[0,.65,0]);
-document.getElementById("viewRear").onclick=()=>setView([6.8,1.1,0],[0,.58,0]);
-
-document.getElementById("status").textContent="Modelo 3D carregado — somente carroceria";
-document.getElementById("view3d").click();
-
-addEventListener("resize",()=>{
-  camera.aspect=innerWidth/innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth,innerHeight);
-});
-
-function animate(){
-  requestAnimationFrame(animate);
-  controls.update();
-  renderer.render(scene,camera);
-}
-animate();
-</script>
 </body>
-</html>`);
+</html>
+`);
 });
 
 app.listen(PORT, () => {
